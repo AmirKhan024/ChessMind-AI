@@ -1,0 +1,47 @@
+x-backend: &backend
+  build: ./backend
+  env_file:
+    - path: .env
+      required: false
+  environment:
+    DATABASE_URL: postgresql://chessmind:chessmind@db:5432/chessmind
+    REDIS_URL: redis://redis:6379/0
+  depends_on:
+    db: { condition: service_healthy }
+    redis: { condition: service_healthy }
+
+services:
+  api:
+    <<: *backend
+    ports: ["8000:8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      retries: 10
+
+  # One worker per queue keeps the lichess queue at concurrency 1; add analysis workers later.
+  worker:
+    <<: *backend
+    command: ["rq", "worker", "--url", "redis://redis:6379/0", "lichess", "analysis", "report"]
+
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: chessmind
+      POSTGRES_PASSWORD: chessmind
+      POSTGRES_DB: chessmind
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chessmind"]
+      interval: 3s
+      retries: 10
+
+  redis:
+    image: redis:7
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      retries: 10
+
+volumes:
+  pgdata:
