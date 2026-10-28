@@ -11,6 +11,9 @@ dependencies = [
     "rq",
     "chess",
     "httpx",
+    "sqlalchemy",
+    "alembic",
+    "python-multipart",
 ]
 
 [dependency-groups]
@@ -25,3 +28,6 @@ select = ["E", "F", "I", "B"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.ruff.lint.isort]
+known-third-party = ["alembic"]

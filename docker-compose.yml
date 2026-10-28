@@ -6,6 +6,7 @@ x-backend: &backend
   environment:
     DATABASE_URL: postgresql://chessmind:chessmind@db:5432/chessmind
     REDIS_URL: redis://redis:6379/0
+    GAMES_CAP: ${GAMES_CAP:-300}
   depends_on:
     db: { condition: service_healthy }
     redis: { condition: service_healthy }
@@ -13,16 +14,28 @@ x-backend: &backend
 services:
   api:
     <<: *backend
+    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
     ports: ["8000:8000"]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/health')"]
       interval: 5s
       retries: 10
 
-  # One worker per queue keeps the lichess queue at concurrency 1; add analysis workers later.
-  worker:
+  # Exactly one worker on the lichess queue: Lichess allows one request at a time.
+  worker-lichess:
     <<: *backend
-    command: ["rq", "worker", "--url", "redis://redis:6379/0", "lichess", "analysis", "report"]
+    command: ["rq", "worker", "--url", "redis://redis:6379/0", "lichess"]
+    depends_on:
+      api: { condition: service_healthy }
+
+  # Stockfish runs single-threaded per worker; scale with ANALYSIS_WORKERS.
+  worker-analysis:
+    <<: *backend
+    command: ["rq", "worker", "--url", "redis://redis:6379/0", "analysis"]
+    deploy:
+      replicas: ${ANALYSIS_WORKERS:-4}
+    depends_on:
+      api: { condition: service_healthy }
 
   db:
     image: postgres:17
@@ -30,6 +43,7 @@ services:
       POSTGRES_USER: chessmind
       POSTGRES_PASSWORD: chessmind
       POSTGRES_DB: chessmind
+    ports: ["5433:5432"]
     volumes: [pgdata:/var/lib/postgresql/data]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U chessmind"]
