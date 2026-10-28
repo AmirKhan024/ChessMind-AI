@@ -4,8 +4,8 @@
 > Update this file at the end of every session, before finishing.
 
 **Last updated:** 2026-10-28
-**Current chunk:** Chunk 1, Ingest and analyse
-**Overall state:** Chunk 0 done (CI green); Chunk 1 in progress
+**Current chunk:** Chunk 2, Weakness engine (not started)
+**Overall state:** Chunks 0-1 done (CI green); Chunk 2 next
 
 ---
 
@@ -14,7 +14,7 @@
 | Chunk | Name | State | Tag |
 |---|---|---|---|
 | 0 | Foundation | done | chunk-0-done |
-| 1 | Ingest and analyse | in progress | |
+| 1 | Ingest and analyse | done | chunk-1-done |
 | 2 | Weakness engine | not started | |
 | 3 | Coach | not started | |
 | 4 | Product surface | not started | |
@@ -27,7 +27,7 @@ States: not started / in progress / blocked / done
 
 ## Right now
 
-- **Working on:** Chunk 1 essentially done; awaiting CI.
+- **Working on:** nothing; next is Chunk 2 (first: bulk-file size check and eval-consistency check).
 - **Risk for Chunk 2:** bulk-file evals come from Lichess server analysis, not our 100k-node limit. Labeling 100k+ bulk games ourselves would take days of CPU at 8.6 pos/s/core. Need to check label consistency between the two sources on a sample before building the baseline.
 - **Chunk 1 plan:** Stockfish 19 (pinned binary) in the worker image; benchmark nodes limits on real-game positions. Tables via Alembic: games, moves, position_cache, jobs. Lichess fetch = one streamed NDJSON request on a dedicated RQ worker for the `lichess` queue (concurrency 1); on 429 the job sleeps 60s inside that single worker, which pauses the whole queue with no extra machinery. One analysis job per game on the `analysis` queue (N workers), writing per-game results so re-runs skip finished games. PGN upload endpoint uses the same parser. Same as source of truth except the 429 mechanism (simpler).
 
