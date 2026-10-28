@@ -1,4 +1,5 @@
 from sqlalchemy import (
+    JSON,
     BigInteger,
     Column,
     DateTime,
@@ -91,6 +92,25 @@ jobs = Table(
     Column("error", Text),
     Column("created_at", DateTime(timezone=True), server_default=func.now(), nullable=False),
     Column("updated_at", DateTime(timezone=True), server_default=func.now(), nullable=False),
+)
+
+# Every coach report with the versions that produced it and its verification log.
+reports = Table(
+    "reports",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("username", String(30), nullable=False, index=True),
+    Column("created_at", DateTime(timezone=True), server_default=func.now(), nullable=False),
+    Column("method", String(10), nullable=False),  # llm | template
+    Column("attempts", SmallInteger, nullable=False),
+    Column("llm_model", String(60)),
+    Column("prompt_version", String(20), nullable=False),
+    Column("engine", String(40)),
+    Column("engine_nodes", Integer),
+    Column("verification", JSON, nullable=False),  # errors per attempt; [] = grounded
+    Column("facts", JSON, nullable=False),
+    Column("report", JSON, nullable=False),
+    Column("total_tokens", Integer, nullable=False, server_default="0"),
 )
 
 engine = create_engine(

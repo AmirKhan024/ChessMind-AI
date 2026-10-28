@@ -3,12 +3,13 @@ import uuid
 import psycopg
 import redis
 from fastapi import FastAPI, Form, HTTPException, Response, UploadFile
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 
-from app import tasks
+from app import coach, tasks
 from app.config import settings
-from app.db import engine, jobs, players
+from app.db import engine, jobs, players, reports
 from app.games import USERNAME_RE
 from app.weakness import find_weaknesses, player_moves
 
@@ -114,3 +115,44 @@ def weaknesses(username: str) -> dict:
         },
         "weaknesses": find_weaknesses(mv),
     }
+
+
+def _username(username: str) -> str:
+    if not USERNAME_RE.match(username):
+        raise HTTPException(422, "invalid username")
+    return username.lower()
+
+
+@app.post("/players/{username}/report")
+def create_report(username: str) -> dict:
+    row = coach.generate_report(_username(username))
+    if row is None:
+        raise HTTPException(404, "no analysed games for this player")
+    return {k: row[k] for k in ("id", "method", "attempts", "report", "facts")}
+
+
+@app.get("/reports/{report_id}")
+def get_report(report_id: str) -> dict:
+    with engine.connect() as conn:
+        row = conn.execute(select(reports).where(reports.c.id == report_id)).one_or_none()
+    if row is None:
+        raise HTTPException(404, "report not found")
+    return dict(row._mapping)
+
+
+class Turn(BaseModel):
+    role: str = Field(pattern="^(user|assistant)$")
+    content: str = Field(max_length=1000)
+
+
+class ChatRequest(BaseModel):
+    messages: list[Turn] = Field(min_length=1, max_length=12)
+
+
+@app.post("/players/{username}/chat")
+def chat(username: str, body: ChatRequest) -> dict:
+    facts = coach.player_facts(_username(username))
+    if facts is None:
+        raise HTTPException(404, "no analysed games for this player")
+    out = coach.answer(facts, [t.model_dump() for t in body.messages])
+    return {"answer": out["answer"], "grounded": out["grounded"]}
