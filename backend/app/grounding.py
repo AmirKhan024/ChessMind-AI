@@ -11,6 +11,7 @@ import re
 NUMBER = re.compile(r"(?<![\w.])\d+(?:\.\d+)?")
 TOKEN = re.compile(r"[A-Za-z0-9=+#-]+")
 SAN = re.compile(r"(?:O-O(?:-O)?|[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?)[+#]?")
+LIST_MARKER = re.compile(r"^\s*\d+[.)]\s", re.M)  # "1. " / "2) " at line start
 MAX_CLAIMS = 8
 
 
@@ -77,6 +78,7 @@ def _sans(obj) -> set[str]:
 def check_text(text: str, nums: set[float], sans: set[str]) -> list[str]:
     """Errors for numbers and chess moves in `text` that are not in the allowed sets."""
     errors = []
+    text = LIST_MARKER.sub("", text)
     for n in NUMBER.findall(text):
         if round(float(n), 2) not in nums:
             errors.append(f"number {n} is not in the facts")

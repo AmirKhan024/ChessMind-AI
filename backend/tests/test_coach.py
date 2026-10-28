@@ -84,6 +84,18 @@ def test_chat_answer_grounded_in_tool_output():
 
 
 def test_chat_blocks_numbers_not_from_tools():
-    chat, _ = scripted("You blunder 42% of the time; play Bc4 instead.")
+    bad = "You blunder 42% of the time; play Bc4 instead."
+    chat, calls = scripted(bad, bad)
     out = coach.answer(FACTS, [{"role": "user", "content": "how bad am I"}], chat)
     assert not out["grounded"] and out["answer"] == coach.FALLBACK_ANSWER
+    assert "number 42" in calls[1][-1]["content"]  # one regeneration with feedback
+
+
+def test_chat_regeneration_can_recover():
+    chat, _ = scripted(
+        "You blunder 42% of the time.",
+        tool_call("get_overview"),
+        "You blundered 135 times in 50 games.",
+    )
+    out = coach.answer(FACTS, [{"role": "user", "content": "how bad am I"}], chat)
+    assert out["grounded"]

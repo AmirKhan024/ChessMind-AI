@@ -74,3 +74,9 @@ def test_numbers_inside_move_names_are_not_numbers():
 def test_malformed_output_is_rejected():
     assert validate_report(FACTS, "not json")
     assert validate_report(FACTS, {"summary": "x", "claims": []})
+
+
+def test_list_markers_are_not_numbers():
+    from app.grounding import check_text
+
+    assert check_text("1. You blundered 31 times\n2) Kg3 lost", {31.0}, {"Kg3"}) == []

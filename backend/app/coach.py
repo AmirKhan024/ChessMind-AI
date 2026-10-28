@@ -202,6 +202,8 @@ the best move here?" for a position not in the examples, or general chess theory
 can only show the engine's stored results for their games. Keep answers under 120 words."""
 )
 
+MAX_TOOL_ROUNDS = 3
+CHAT_REGENERATIONS = 1
 FALLBACK_ANSWER = (
     "I could not produce an answer I can verify against your analysed games. "
     "Try asking about one of your listed weaknesses."
@@ -222,29 +224,42 @@ def _run_tool(facts: dict, name: str, args: dict):
 def answer(facts: dict, history: list[dict], chat=llm.chat) -> dict:
     """history: [{"role": "user"|"assistant", "content": str}], last item is the question."""
     messages = [{"role": "system", "content": CHAT_RULES}] + history
-    outputs, tokens = [], 0
+    outputs, tokens, errors = [], 0, []
     try:
-        for _ in range(4):  # tool rounds
-            msg, usage = chat(messages, tools=TOOLS)
-            tokens += usage.get("total_tokens", 0)
-            calls = msg.get("tool_calls") or []
-            if not calls:
-                break
-            messages.append(
-                {"role": "assistant", "content": msg.get("content") or "", "tool_calls": calls}
-            )
-            for c in calls:
-                args = _parse(c["function"].get("arguments")) or {}
-                out = _run_tool(facts, c["function"]["name"], args)
-                outputs.append(out)
+        for attempt in range(1 + CHAT_REGENERATIONS):
+            for rnd in range(MAX_TOOL_ROUNDS + 1):
+                # Last round has no tools, which forces a written answer.
+                tools = TOOLS if rnd < MAX_TOOL_ROUNDS else None
+                msg, usage = chat(messages, tools=tools)
+                tokens += usage.get("total_tokens", 0)
+                calls = msg.get("tool_calls") or []
+                if not calls:
+                    break
                 messages.append(
-                    {"role": "tool", "tool_call_id": c["id"], "content": json.dumps(out)}
+                    {"role": "assistant", "content": msg.get("content") or "", "tool_calls": calls}
                 )
-        text = msg.get("content") or ""
+                for c in calls:
+                    out = _run_tool(
+                        facts, c["function"]["name"], _parse(c["function"].get("arguments")) or {}
+                    )
+                    outputs.append(out)
+                    messages.append(
+                        {"role": "tool", "tool_call_id": c["id"], "content": json.dumps(out)}
+                    )
+            text = msg.get("content") or ""
+            errors = check_text(text, _numbers(outputs), _sans(outputs)) if text else ["empty"]
+            if not errors:
+                return {"answer": text, "grounded": True, "errors": [], "tokens": tokens}
+            log.info("chat attempt %d failed grounding: %s", attempt + 1, errors)
+            messages += [
+                {"role": "assistant", "content": text},
+                {
+                    "role": "user",
+                    "content": "That answer broke the rules: "
+                    + "; ".join(errors)
+                    + ". Answer again using only numbers and moves copied from tool results.",
+                },
+            ]
     except llm.LLMError as e:
-        return {"answer": FALLBACK_ANSWER, "grounded": False, "errors": [str(e)], "tokens": tokens}
-    errors = check_text(text, _numbers(outputs), _sans(outputs)) if text else ["empty answer"]
-    if errors:
-        log.info("chat answer failed grounding: %s", errors)
-        return {"answer": FALLBACK_ANSWER, "grounded": False, "errors": errors, "tokens": tokens}
-    return {"answer": text, "grounded": True, "errors": [], "tokens": tokens}
+        errors = [str(e)]
+    return {"answer": FALLBACK_ANSWER, "grounded": False, "errors": errors, "tokens": tokens}
