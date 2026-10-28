@@ -27,9 +27,8 @@ States: not started / in progress / blocked / done
 
 ## Right now
 
-- **Working on:** nothing; next is Chunk 2 (first: bulk-file size check and eval-consistency check).
-- **Risk for Chunk 2:** bulk-file evals come from Lichess server analysis, not our 100k-node limit. Labeling 100k+ bulk games ourselves would take days of CPU at 8.6 pos/s/core. Need to check label consistency between the two sources on a sample before building the baseline.
-- **Chunk 1 plan:** Stockfish 19 (pinned binary) in the worker image; benchmark nodes limits on real-game positions. Tables via Alembic: games, moves, position_cache, jobs. Lichess fetch = one streamed NDJSON request on a dedicated RQ worker for the `lichess` queue (concurrency 1); on 429 the job sleeps 60s inside that single worker, which pauses the whole queue with no extra machinery. One analysis job per game on the `analysis` queue (N workers), writing per-game results so re-runs skip finished games. PGN upload endpoint uses the same parser. Same as source of truth except the 429 mechanism (simpler).
+- **Working on:** Chunk 2.
+- **Chunk 2 plan:** (1) Stream-decompress only the head of the newest monthly file (2026-09 is 29.2 GB; a few hundred MB holds roughly 1M games), keep standard-time-control rated games. (2) Measure eval bias: games with `%eval` vs without (rating, speed, result, length). (3) Consistency: re-label ~200 evaluated games with our 100k-node Stockfish, compare with labels from Lichess evals. (4) Choose the training labels from (2)+(3): Lichess evals if consistent and unbiased; otherwise our own engine on a random sample (tens of minutes of CPU, not days, if a few thousand games are enough). (5) One feature function over `parse_game` output, used for training and serving. (6) Logistic regression vs LightGBM, player-level split, log-loss/Brier/calibration by rating band and speed. (7) Weakness ranking: observed vs expected blunders per slice with Gamma-Poisson shrinkage and P(ratio>1). (8) Predictive validity on players with many games (early vs later games).
 
 ## Done so far
 

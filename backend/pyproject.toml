@@ -14,10 +14,13 @@ dependencies = [
     "sqlalchemy",
     "alembic",
     "python-multipart",
+    "lightgbm",
+    "pandas",
 ]
 
 [dependency-groups]
 dev = ["pytest", "ruff"]
+ml = ["zstandard", "pyarrow", "scikit-learn", "matplotlib"]
 
 [tool.ruff]
 line-length = 100

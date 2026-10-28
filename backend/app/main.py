@@ -10,6 +10,7 @@ from app import tasks
 from app.config import settings
 from app.db import engine, jobs, players
 from app.games import USERNAME_RE
+from app.weakness import find_weaknesses, player_moves
 
 app = FastAPI(title="ChessMind AI")
 MAX_UPLOAD_BYTES = 5_000_000
@@ -93,4 +94,23 @@ def job_status(job_id: str) -> dict:
         "positions": row.positions,
         "cache_hit_rate": hit_rate,
         "error": row.error,
+    }
+
+
+@app.get("/players/{username}/weaknesses")
+def weaknesses(username: str) -> dict:
+    if not USERNAME_RE.match(username):
+        raise HTTPException(422, "invalid username")
+    mv = player_moves(username.lower())
+    if mv.empty:
+        raise HTTPException(404, "no analysed games for this player")
+    return {
+        "username": username.lower(),
+        "games": int(mv.game_id.nunique()),
+        "moves": len(mv),
+        "overall": {
+            "observed_blunders": int(mv.blunder.sum()),
+            "expected_blunders": round(float(mv.expected.sum()), 2),
+        },
+        "weaknesses": find_weaknesses(mv),
     }

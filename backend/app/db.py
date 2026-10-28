@@ -93,4 +93,6 @@ jobs = Table(
     Column("updated_at", DateTime(timezone=True), server_default=func.now(), nullable=False),
 )
 
-engine = create_engine(settings.sqlalchemy_url, pool_pre_ping=True)
+engine = create_engine(
+    settings.sqlalchemy_url, pool_pre_ping=True, connect_args={"connect_timeout": 5}
+)

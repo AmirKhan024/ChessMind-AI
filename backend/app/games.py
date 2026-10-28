@@ -19,20 +19,21 @@ def read_pgns(text: str) -> Iterator[chess.pgn.Game]:
         yield game
 
 
-def parse_game(game: chess.pgn.Game, username: str) -> tuple[dict, list[dict]] | None:
-    """Return (game row, move rows) or None if the game is unusable for this player."""
+def parse_game(game: chess.pgn.Game, username: str | None) -> tuple[dict, list[dict]] | None:
+    """Return (game row, move rows) or None if the game is unusable for this player.
+    username=None keeps any standard game (bulk data)."""
     h = game.headers
     if h.get("Variant", "Standard") != "Standard" or "FEN" in h:
         return None
     white, black = h.get("White", "").lower(), h.get("Black", "").lower()
-    if username.lower() not in (white, black):
+    if username is not None and username.lower() not in (white, black):
         return None
     pgn = str(game)
     site = _LICHESS_SITE.search(h.get("Site", ""))
     game_id = h.get("GameId") or (site and site.group(1))
     game_id = game_id or "u" + hashlib.sha1(pgn.encode()).hexdigest()[:20]
 
-    initial, inc = _time_control(h.get("TimeControl", ""))
+    initial, inc = time_control(h.get("TimeControl", ""))
     rows, last_clock = [], {}
     board = game.board()
     for ply, node in enumerate(game.mainline(), start=1):
@@ -80,7 +81,7 @@ def _int(v: str | None) -> int | None:
     return int(v) if v and v.isdigit() else None
 
 
-def _time_control(tc: str) -> tuple[int | None, int | None]:
+def time_control(tc: str) -> tuple[int | None, int | None]:
     m = re.fullmatch(r"(\d+)\+(\d+)", tc)
     return (int(m.group(1)), int(m.group(2))) if m else (None, None)
 

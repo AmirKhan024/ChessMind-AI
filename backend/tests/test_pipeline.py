@@ -89,3 +89,23 @@ def test_analyse_is_idempotent(run):
     calls = sf.calls
     tasks.analyse_game(served["games"][0]["id"], job.id, sf=sf)
     assert sf.calls == calls
+
+
+def test_player_moves_uses_shared_features_and_model(run):
+    from app.weakness import player_moves
+
+    go, *_ = run
+    go()
+    df = player_moves("thibault")
+    with engine.connect() as c:
+        own = c.scalar(
+            select(func.count())
+            .select_from(moves.join(games, moves.c.game_id == games.c.id))
+            .where(
+                ((games.c.white == "thibault") & (moves.c.color == "white"))
+                | ((games.c.black == "thibault") & (moves.c.color == "black"))
+            )
+        )
+    assert len(df) == own
+    assert df.expected.between(0, 1).all()
+    assert df.blunder.sum() > 0
