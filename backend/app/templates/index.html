@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Find the situations where you blunder</h1>
+<p class="muted">Your games are analysed with Stockfish and compared with players at your rating.
+  You get the situations where you blunder more than expected, with example positions.</p>
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+<div class="card">
+  <h2 style="margin-top:0">Lichess username</h2>
+  <form method="post" action="/ui/analyse">
+    <label for="u1">Username</label>
+    <input id="u1" type="text" name="username" value="{{ username or '' }}" required
+           pattern="[A-Za-z0-9][A-Za-z0-9_\-]{0,28}[A-Za-z0-9]" autocomplete="off">
+    <button type="submit">Analyse my games</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Or upload a PGN file</h2>
+  <form method="post" action="/ui/upload" enctype="multipart/form-data">
+    <label for="u2">Your username in the file</label>
+    <input id="u2" type="text" name="username" value="{{ username or '' }}" required
+           pattern="[A-Za-z0-9][A-Za-z0-9_\-]{0,28}[A-Za-z0-9]" autocomplete="off">
+    <label for="f">PGN file (up to 5 MB)</label>
+    <input id="f" type="file" name="file" accept=".pgn,text/plain" required>
+    <button type="submit">Upload and analyse</button>
+  </form>
+</div>
+{% endblock %}

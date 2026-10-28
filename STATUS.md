@@ -4,8 +4,8 @@
 > Update this file at the end of every session, before finishing.
 
 **Last updated:** 2026-10-28
-**Current chunk:** Chunk 4, Product surface (not started)
-**Overall state:** Chunks 0-3 done (CI green); Chunk 4 next
+**Current chunk:** Chunk 4, Product surface (in progress)
+**Overall state:** Chunks 0-3 done (CI green); Chunk 4 first slice done (submit, progress, report pages)
 
 ---
 
@@ -17,7 +17,7 @@
 | 1 | Ingest and analyse | done | chunk-1-done |
 | 2 | Weakness engine | done | chunk-2-done |
 | 3 | Coach | done | chunk-3-done |
-| 4 | Product surface | not started | |
+| 4 | Product surface | in progress | |
 | 5 | Production and cloud | not started | |
 | 6 | Evidence and polish | not started | |
 
@@ -27,7 +27,8 @@ States: not started / in progress / blocked / done
 
 ## Right now
 
-- **Working on:** Chunk 3 wrap-up. Next: Chunk 4 (UI). Open items for Chunk 3: re-record `tests/fixtures/coach/recorded.jsonl` after prompt changes (`python -m ml.eval_coach beny627 goodplayscap husnu1995 --reports 2`); report first-try pass rate is only 50%, try a clearer prompt or gpt-oss-20b comparison.
+- **Working on:** Chunk 4. Done: `/` (username or PGN upload), `/ui/jobs/{id}` (progress bar, queue position, 3 s auto-refresh), `/ui/reports/{id}` (report with SVG boards of cited positions, red = played, green = engine best), "Write my coaching report" button. `GET /jobs/{id}` now returns `queue_position`. **Left for Chunk 4:** (1) chat box on the report page (`POST /players/{u}/chat` exists); (2) puzzle drill list: download Lichess puzzle DB, map weakness slices to puzzle themes; (3) check the whole flow in a real browser from a clean `docker compose down -v && docker compose up --build`; (4) report generation runs inside the request (3-40 s); move to the queue if it feels slow.
+- **Chunk 3 open items:** Open items for Chunk 3: re-record `tests/fixtures/coach/recorded.jsonl` after prompt changes (`python -m ml.eval_coach beny627 goodplayscap husnu1995 --reports 2`); report first-try pass rate is only 50%, try a clearer prompt or gpt-oss-20b comparison.
 - **Chunk 3 plan:** No LangGraph: the report is one structured call and chat is a short tool loop, plain code is simpler (decision logged). `llm.py` Groq client (timeout, bounded retries, backoff). `grounding.py` pure-code verifier: LLM must copy numbers verbatim from facts; every number and chess move in a claim must exist in the cited weakness/evidence facts; claims must cite evidence ids of their own weakness. Up to 2 regenerations with error feedback, then deterministic template. Reports table stores method, versions, verification log. Chat = tool loop over the same facts, answer verified against that turn's tool outputs. Eval: recorded fixtures (good + deliberately bad outputs) in CI; live script measures grounding pass rate.
 - **Chunk 2 plan:** (1) Stream-decompress only the head of the newest monthly file (2026-09 is 29.2 GB; a few hundred MB holds roughly 1M games), keep standard-time-control rated games. (2) Measure eval bias: games with `%eval` vs without (rating, speed, result, length). (3) Consistency: re-label ~200 evaluated games with our 100k-node Stockfish, compare with labels from Lichess evals. (4) Choose the training labels from (2)+(3): Lichess evals if consistent and unbiased; otherwise our own engine on a random sample (tens of minutes of CPU, not days, if a few thousand games are enough). (5) One feature function over `parse_game` output, used for training and serving. (6) Logistic regression vs LightGBM, player-level split, log-loss/Brier/calibration by rating band and speed. (7) Weakness ranking: observed vs expected blunders per slice with Gamma-Poisson shrinkage and P(ratio>1). (8) Predictive validity on players with many games (early vs later games).
 
@@ -104,6 +105,7 @@ Log every deviation from a "Recommended" item, and any important choice.
 | 2026-10-28 | Grounding = exact-number + move check: LLM must copy numbers verbatim from the cited facts; SAN moves only from cited examples; claims must cite their own weakness's evidence | Deterministic, explainable, easy to test; any arithmetic or invented move fails | Fuzzy number tolerance (lets wrong numbers through), LLM-as-judge (an LLM checking an LLM) |
 | 2026-10-28 | Report: 1 try + 2 regenerations with error feedback, then template. Chat: 1 regeneration, then a fixed refusal | Bounded latency and tokens under the 8k TPM limit | Unbounded retries |
 | 2026-10-28 | Groq model `openai/gpt-oss-120b`, `reasoning_effort=low`, temperature 0.2, JSON mode for reports | Largest listed model; low reasoning keeps tokens within limit | gpt-oss-20b, qwen3.8-27b (not compared yet) |
+| 2026-10-28 | UI: server-rendered Jinja2 pages in the API, boards as SVG from python-chess | No JS build, no CDN, one container; the source of truth allows templates for a solo build | React + Vite + chessboard component |
 | 2026-10-28 | uv + `uv.lock` for pinned deps | Reproducible builds, fast CI | pip + requirements.txt |
 
 ---
@@ -117,3 +119,4 @@ Short entry per session: what changed, what is broken, what to do next.
 - 2026-10-28: Chunk 1 built. Found Lichess needs a User-Agent, `max` is soft with filters, PGN `Site` is now `/game/<id>` (use `GameId` header). Cache hit rate is low (5-7%) for single users; worth re-checking with more users. Next: Chunk 2, starting with the bulk-eval vs our-label consistency check.
 - 2026-10-28: Chunk 2 built and measured; results in `docs/results.md`. Caveats: validity sample is 98% bullet (players with many games in a 50 MB head); only 1 month of data. If time allows, a larger/other-month sample would firm this up. `GET /players/{u}/weaknesses` works on real analysed players. Labelling 3,000 games took ~2.5 h of laptop CPU.
 - 2026-10-28: Chunk 3 built. Coach report + chat with code-only grounding verifier, regeneration, template/refusal fallback, reports table with versions. Live eval on 3 real players. Found and fixed: vague reports passed a loose verifier; chat tool loop hit Groq 400 (`tool_choice none` but model called a tool). 43 tests incl. replay of real recorded outputs.
+- 2026-10-28: Chunk 4 first slice (short session). Server-rendered UI: submit/upload, progress with queue position, report with boards. Tested live: real report for beny627 (gpt-oss-120b, grounded, 3.6 s) renders with boards; upload, re-upload and error paths work. 47 tests pass. Next: chat UI, puzzle drill list, clean-compose browser check.

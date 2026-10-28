@@ -16,6 +16,7 @@ dependencies = [
     "python-multipart",
     "lightgbm",
     "pandas",
+    "jinja2>=3.1.6",
 ]
 
 [dependency-groups]

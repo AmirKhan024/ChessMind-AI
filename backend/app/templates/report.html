@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Report for {{ report.username }} · ChessMind AI{% endblock %}
+{% block body %}
+<h1>Report for {{ report.username }}</h1>
+<p>{{ summary }}</p>
+<p class="muted">
+  {{ report.facts.games }} games, {{ report.facts.moves }} moves.
+  {% if report.method == "llm" %}Written by {{ report.llm_model }}; every number and move was checked against the analysis.
+  {% else %}Written from a fixed template (the AI text did not pass the checks or was not needed).{% endif %}
+  Engine: {{ report.engine or "n/a" }}{% if report.engine_nodes %}, {{ report.engine_nodes }} nodes per position{% endif %}.
+</p>
+
+{% for c in claims %}
+<div class="card">
+  <h2 style="margin-top:0">{{ c.weakness.slice }}</h2>
+  <div class="stats muted">
+    <span>Blunders: {{ c.weakness.observed_blunders }} (expected {{ c.weakness.expected_blunders }})</span>
+    <span>{{ c.weakness.ratio }}x peers</span>
+    <span>Confidence {{ c.weakness.confidence_pct }}%</span>
+    <span>Cost ≈ {{ c.weakness.games_lost_equivalent }} games</span>
+  </div>
+  <p>{{ c.text }}</p>
+  <div class="examples">
+    {% for e in c.examples %}
+    <figure class="example" style="margin:0">
+      {{ boards.get(e.id, "")|safe }}
+      <figcaption class="muted">
+        Move {{ e.move_number }}: you played <span class="played">{{ e.played }}</span>{% if e.best and e.best != e.played %}, engine preferred <span class="best">{{ e.best }}</span>{% endif %}.
+        Winning chances {{ e.win_before }}% → {{ e.win_after }}%{% if e.clock_s is not none %}, {{ e.clock_s }}s on the clock{% endif %}.
+      </figcaption>
+    </figure>
+    {% endfor %}
+  </div>
+</div>
+{% else %}
+<div class="card">No recurring weakness stood out with enough confidence.</div>
+{% endfor %}
+
+<p class="muted">Red arrow: your move. Green arrow: the engine's choice.</p>
+{% endblock %}

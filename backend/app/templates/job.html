@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block head %}{% if running %}<meta http-equiv="refresh" content="3">{% endif %}{% endblock %}
+{% block title %}{{ job.username }} · ChessMind AI{% endblock %}
+{% block body %}
+<h1>{{ job.username }}</h1>
+<div class="card">
+  {% if job.status == "fetching" %}
+    <p>Downloading games from Lichess…</p>
+  {% elif job.status == "analysing" %}
+    <p>Analysing games with Stockfish: {{ job.done }} of {{ job.total }} done.</p>
+    <progress value="{{ job.done }}" max="{{ job.total }}"></progress>
+  {% elif job.status == "done" %}
+    <p>Analysis finished{% if job.total %}: {{ job.total }} new games analysed{% else %}: no new games to analyse{% endif %}.</p>
+  {% elif job.status == "failed" %}
+    <p class="error">Failed: {{ job.error }}</p>
+  {% endif %}
+
+  {% if running %}
+    <p class="muted">
+      {% if queue_position is none %}Running now.
+      {% elif queue_position == 0 %}Next in the queue.
+      {% else %}Queue position: {{ queue_position }} {{ "task" if queue_position == 1 else "tasks" }} ahead of you.
+      {% endif %}
+      This page refreshes every 3 seconds.
+    </p>
+  {% endif %}
+</div>
+
+{% if job.status == "done" %}
+<form method="post" action="/ui/players/{{ job.username }}/report">
+  <button type="submit">Write my coaching report</button>
+  <p class="muted">Takes up to a minute. Every number in it is checked against the analysis.</p>
+</form>
+{% endif %}
+{% endblock %}

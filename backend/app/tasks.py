@@ -7,6 +7,7 @@ import chess
 import chess.engine
 from redis import Redis
 from rq import Callback, Queue
+from rq.job import Job
 from sqlalchemy import case, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 
@@ -34,6 +35,18 @@ def enqueue(queue: Queue, func, job_id: str, *args, timeout: int) -> None:
         meta={"job_id": job_id},
         on_failure=Callback(_on_failure),
     )
+
+
+def queue_position(job_id: str, status: str) -> int | None:
+    """How many queued RQ jobs (other players' fetches or games) are ahead of this job's first
+    waiting one. None when nothing of this job is waiting (running, finished or failed)."""
+    queue = {"fetching": lichess_queue, "analysing": analysis_queue}.get(status)
+    if queue is None:
+        return None
+    for i, rq_job in enumerate(Job.fetch_many(queue.get_job_ids(), connection=redis)):
+        if rq_job is not None and rq_job.meta.get("job_id") == job_id:
+            return i
+    return None
 
 
 def player_games(username: str):

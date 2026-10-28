@@ -7,13 +7,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 
-from app import coach, tasks
+from app import coach, tasks, web
 from app.config import settings
 from app.db import engine, jobs, players, reports
 from app.games import USERNAME_RE
 from app.weakness import find_weaknesses, player_moves
 
 app = FastAPI(title="ChessMind AI")
+app.include_router(web.router)
 MAX_UPLOAD_BYTES = 5_000_000
 
 
@@ -94,6 +95,7 @@ def job_status(job_id: str) -> dict:
         "games_total": row.total,
         "positions": row.positions,
         "cache_hit_rate": hit_rate,
+        "queue_position": tasks.queue_position(job_id, row.status),
         "error": row.error,
     }
 
