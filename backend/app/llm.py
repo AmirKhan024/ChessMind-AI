@@ -22,6 +22,7 @@ def chat(
     messages: list[dict],
     tools: list[dict] | None = None,
     json_mode: bool = False,
+    tool_choice: str | None = None,
     client: httpx.Client | None = None,
 ) -> tuple[dict, dict]:
     """Returns (assistant message, usage). Raises LLMError after bounded retries."""
@@ -36,6 +37,8 @@ def chat(
     }
     if tools:
         body["tools"] = tools
+        if tool_choice:
+            body["tool_choice"] = tool_choice
     if json_mode:
         body["response_format"] = {"type": "json_object"}
     headers = {"Authorization": f"Bearer {settings.groq_api_key}"}
@@ -53,7 +56,7 @@ def chat(
                 return data["choices"][0]["message"], data.get("usage", {})
             last = f"HTTP {r.status_code}"
             if r.status_code not in (429, 500, 502, 503, 504):
-                raise LLMError(last)
+                raise LLMError(f"{last}: {r.text[:200]}")
             wait = min(float(r.headers.get("retry-after", 2 ** (attempt + 1))), MAX_WAIT)
             if attempt < MAX_ATTEMPTS - 1:
                 log.warning("groq %s, retrying in %.0fs", last, wait)

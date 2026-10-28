@@ -44,7 +44,7 @@ def build_facts(
                 "confidence_pct": round(w["confidence"] * 100),
                 "observed_rate_pct": round(w["observed_rate"] * 100, 1),
                 "expected_rate_pct": round(w["expected_rate"] * 100, 1),
-                "cost_win_pct": round(w["cost_win_pct"], 1),
+                "games_lost_equivalent": round(w["cost_win_pct"] / 100, 1),
                 "examples": [{"id": e, **details[e]} for e in w["evidence"] if e in details],
             }
         )
@@ -119,6 +119,8 @@ def validate_report(facts: dict, report) -> list[str]:
         nums = _numbers(own) | _numbers(top_level) | _numbers([known[e] for e in cited])
         sans = _sans([known[e] for e in cited])
         errors += [f"{where}: {e}" for e in check_text(c["text"], nums, sans)]
+        if not _numbers(LIST_MARKER.sub("", c["text"])) & _numbers(own):
+            errors.append(f"{where}: must quote numbers from {w['id']} (observed, expected, ratio)")
     errors += [f"{w}: no claim covers this weakness" for w in by_id if w not in covered]
     return errors
 
@@ -133,7 +135,7 @@ def template_report(facts: dict) -> dict:
             f"moves ({w['observed_rate_pct']}%), while players at your rating would be "
             f"expected to blunder about {w['expected_blunders']} times "
             f"({w['expected_rate_pct']}%). That is {w['ratio']}x the expected rate, "
-            f"costing roughly {w['cost_win_pct']} win-probability points."
+            f"costing about {w['games_lost_equivalent']} games' worth of winning chances."
         )
         claims.append({"weakness": w["id"], "text": text, "evidence": [e["id"] for e in ex]})
     if claims:

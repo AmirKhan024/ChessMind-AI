@@ -2,12 +2,12 @@
  "weaknesses": [
   {"id": "W1", "slice": "time left: under 10s", "moves": 210, "observed_blunders": 31,
    "expected_blunders": 14.6, "ratio": 2.1, "confidence_pct": 99, "observed_rate_pct": 14.8,
-   "expected_rate_pct": 7.0, "cost_win_pct": 6.4,
+   "expected_rate_pct": 7.0, "games_lost_equivalent": 0.6,
    "examples": [
     {"id": "abcd1234:61", "move_number": 31, "played": "Qxb7", "best": "Nf3", "win_before": 62, "win_after": 18, "clock_s": 7},
     {"id": "efgh5678:44", "move_number": 22, "played": "Rd1", "best": "Re1", "win_before": 55, "win_after": 20, "clock_s": 4}]},
   {"id": "W2", "slice": "game phase: endgame", "moves": 400, "observed_blunders": 40,
    "expected_blunders": 27.3, "ratio": 1.4, "confidence_pct": 98, "observed_rate_pct": 10.0,
-   "expected_rate_pct": 6.8, "cost_win_pct": 3.1,
+   "expected_rate_pct": 6.8, "games_lost_equivalent": 0.3,
    "examples": [
     {"id": "ijkl9012:80", "move_number": 40, "played": "Kg3", "best": "Kf2", "win_before": 70, "win_after": 35, "clock_s": 25}]}]}

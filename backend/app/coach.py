@@ -25,13 +25,16 @@ computed by a chess engine and a statistical model. Rules you must follow:
 - Mention a chess move only if it appears as `played` or `best` in an example you cite.
 - Never judge a position or a move yourself; the engine already did.
 - win_before/win_after are the player's winning chances in percent before and after the move.
+- games_lost_equivalent is the excess winning chances lost, summed over games, in units of
+  whole games (e.g. 2.5 = about two and a half games' worth of winning chances).
 """
 
 REPORT_TASK = """Write a short report as JSON:
 {"summary": "<2 sentences about the player overall>",
  "claims": [{"weakness": "W1", "text": "<1-3 sentences>", "evidence": ["<example id>"]}]}
-Write exactly one claim per weakness, citing 1-2 of that weakness's example ids, and explain
-what the slice means in plain words plus one practical habit to try (without numbers)."""
+Write exactly one claim per weakness, citing 1-2 of that weakness's example ids. Each claim
+must state the observed and expected blunders and the ratio (copied from the facts), what
+the slice means in plain words, and one practical habit to try."""
 
 
 def player_facts(username: str) -> dict | None:
@@ -228,9 +231,9 @@ def answer(facts: dict, history: list[dict], chat=llm.chat) -> dict:
     try:
         for attempt in range(1 + CHAT_REGENERATIONS):
             for rnd in range(MAX_TOOL_ROUNDS + 1):
-                # Last round has no tools, which forces a written answer.
-                tools = TOOLS if rnd < MAX_TOOL_ROUNDS else None
-                msg, usage = chat(messages, tools=tools)
+                # Last round forbids tool calls, which forces a written answer.
+                choice = "auto" if rnd < MAX_TOOL_ROUNDS else "none"
+                msg, usage = chat(messages, tools=TOOLS, tool_choice=choice)
                 tokens += usage.get("total_tokens", 0)
                 calls = msg.get("tool_calls") or []
                 if not calls:

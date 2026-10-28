@@ -99,6 +99,10 @@ Log every deviation from a "Recommended" item, and any important choice.
 | 2026-10-28 | LightGBM chosen over logistic regression | Log-loss 0.200 vs 0.238, both calibrated | Logistic (kept as reported baseline) |
 | 2026-10-28 | File model registry (`backend/models/peer_baseline/` with metrics.json) instead of MLflow | One model, metrics in JSON are enough for the CI quality gate; no tracking server | MLflow (revisit if many experiments) |
 | 2026-10-28 | Weakness confidence threshold 0.975, Gamma(5,5) prior, slices >60% of moves excluded | Null simulation: 0.9 gave 0.8 false findings/player; 0.975 gives 0.18 with 96% power for a 2.4x effect | 0.9, 0.99 (power 0.89) |
+| 2026-10-28 | No LangGraph: plain Python for the report loop and the chat tool loop | One structured call + a 3-round tool loop; a graph framework adds a dependency and indirection without solving a problem here | LangGraph |
+| 2026-10-28 | Grounding = exact-number + move check: LLM must copy numbers verbatim from the cited facts; SAN moves only from cited examples; claims must cite their own weakness's evidence | Deterministic, explainable, easy to test; any arithmetic or invented move fails | Fuzzy number tolerance (lets wrong numbers through), LLM-as-judge (an LLM checking an LLM) |
+| 2026-10-28 | Report: 1 try + 2 regenerations with error feedback, then template. Chat: 1 regeneration, then a fixed refusal | Bounded latency and tokens under the 8k TPM limit | Unbounded retries |
+| 2026-10-28 | Groq model `openai/gpt-oss-120b`, `reasoning_effort=low`, temperature 0.2, JSON mode for reports | Largest listed model; low reasoning keeps tokens within limit | gpt-oss-20b, qwen3.8-27b (not compared yet) |
 | 2026-10-28 | uv + `uv.lock` for pinned deps | Reproducible builds, fast CI | pip + requirements.txt |
 
 ---
