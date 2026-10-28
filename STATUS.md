@@ -4,8 +4,8 @@
 > Update this file at the end of every session, before finishing.
 
 **Last updated:** 2026-10-28
-**Current chunk:** Chunk 3, Coach (not started)
-**Overall state:** Chunks 0-2 done (CI green); Chunk 3 next
+**Current chunk:** Chunk 4, Product surface (not started)
+**Overall state:** Chunks 0-3 done (CI green); Chunk 4 next
 
 ---
 
@@ -16,7 +16,7 @@
 | 0 | Foundation | done | chunk-0-done |
 | 1 | Ingest and analyse | done | chunk-1-done |
 | 2 | Weakness engine | done | chunk-2-done |
-| 3 | Coach | done locally, CI pending | |
+| 3 | Coach | done | chunk-3-done |
 | 4 | Product surface | not started | |
 | 5 | Production and cloud | not started | |
 | 6 | Evidence and polish | not started | |
