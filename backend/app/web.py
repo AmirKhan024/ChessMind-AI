@@ -8,10 +8,11 @@ import chess.svg
 from fastapi import APIRouter, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select, tuple_
+from sqlalchemy import case, func, select, tuple_
 
-from app import tasks
+from app import puzzles, tasks
 from app.db import engine, games, jobs, moves, players, reports
+from app.grounding import parse_slice_label
 
 router = APIRouter(include_in_schema=False)
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
@@ -120,6 +121,26 @@ def _squares(uci: str) -> tuple[int, int]:
     return mv.from_square, mv.to_square
 
 
+def _rating(username: str) -> int | None:
+    """The player's average rating over their analysed games, for picking puzzle difficulty."""
+    elo = case((games.c.white == username, games.c.white_elo), else_=games.c.black_elo)
+    with engine.connect() as conn:
+        avg = conn.scalar(
+            select(func.avg(elo)).where(
+                tasks.player_games(username), games.c.analysed_at.is_not(None)
+            )
+        )
+    return round(avg) if avg is not None else None
+
+
+def _puzzle_board(p: dict) -> str:
+    """Puzzle position after the opponent's first move, from the solver's side."""
+    board = chess.Board(p["fen"])
+    first = chess.Move.from_uci(p["moves"][0])
+    board.push(first)
+    return chess.svg.board(board, lastmove=first, orientation=board.turn, size=200)
+
+
 @router.get("/ui/reports/{report_id}", response_class=HTMLResponse)
 def ui_report(request: Request, report_id: str):
     with engine.connect() as conn:
@@ -136,6 +157,15 @@ def ui_report(request: Request, report_id: str):
         cited = [examples[e] for e in c["evidence"] if e in examples]
         claims.append({"text": c["text"], "weakness": w, "examples": cited})
     boards = _boards([e["id"] for c in claims for e in c["examples"]])
+    rating = _rating(row.username)
+    shown: set[str] = set()
+    for c in claims:
+        sl = parse_slice_label(c["weakness"]["slice"])
+        c["title"] = puzzles.display_label(sl["family"], sl["value"], c["weakness"]["slice"])
+        c["drill"] = puzzles.drills(sl["family"], sl["value"], rating, exclude=shown)
+        shown |= {p["id"] for p in c["drill"]["puzzles"]}
+        for p in c["drill"]["puzzles"]:
+            boards.setdefault("puzzle:" + p["id"], _puzzle_board(p))
     return _page(
         request,
         "report.html",
@@ -143,4 +173,5 @@ def ui_report(request: Request, report_id: str):
         summary=row.report["summary"],
         claims=claims,
         boards=boards,
+        rating=rating,
     )

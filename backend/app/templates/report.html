@@ -12,7 +12,7 @@
 
 {% for c in claims %}
 <div class="card">
-  <h2 style="margin-top:0">{{ c.weakness.slice }}</h2>
+  <h2 style="margin-top:0">{{ c.title }}</h2>
   <div class="stats muted">
     <span>Blunders: {{ c.weakness.observed_blunders }} (expected {{ c.weakness.expected_blunders }})</span>
     <span>{{ c.weakness.ratio }}x peers</span>
@@ -31,10 +31,80 @@
     </figure>
     {% endfor %}
   </div>
+  {% if c.drill.puzzles %}
+  <h3>Drill: {{ c.drill.puzzles|length }} puzzles ({{ c.drill.themes|join(", ") }})</h3>
+  <div class="examples">
+    {% for p in c.drill.puzzles %}
+    <a class="puzzle" href="https://lichess.org/training/{{ p.id }}" target="_blank" rel="noopener">
+      {{ boards.get("puzzle:" ~ p.id, "")|safe }}
+      <span class="muted">Puzzle {{ p.id }} · rating {{ p.rating }}</span>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
 </div>
 {% else %}
 <div class="card">No recurring weakness stood out with enough confidence.</div>
 {% endfor %}
 
-<p class="muted">Red arrow: your move. Green arrow: the engine's choice.</p>
+<p class="muted">Red arrow: your move. Green arrow: the engine's choice.
+  Drill puzzles come from the Lichess puzzle database, picked near your average rating
+  ({{ rating or "unknown" }}) for the themes linked to each weakness; they open on Lichess.</p>
+
+<h2>Ask the coach</h2>
+<div class="card">
+  <div id="chat-log" aria-live="polite"></div>
+  <form id="chat-form">
+    <label for="chat-q">Question about your games</label>
+    <input id="chat-q" type="text" maxlength="1000" required autocomplete="off"
+           placeholder="Why do I blunder in the middlegame?" style="max-width:100%">
+    <button type="submit">Ask</button>
+  </form>
+  <p class="muted">Answers use only your analysed games and are checked like the report.</p>
+</div>
+
+<script>
+(() => {
+  const url = "/players/{{ report.username }}/chat";
+  const history = [];
+  const log = document.getElementById("chat-log");
+  const form = document.getElementById("chat-form");
+  const input = document.getElementById("chat-q");
+  const add = (who, text) => {
+    const p = document.createElement("p");
+    const b = document.createElement("strong");
+    b.textContent = who + ": ";
+    p.append(b, text);  // plain text, never HTML
+    log.append(p);
+    return p;
+  };
+  form.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const q = input.value.trim();
+    if (!q) return;
+    input.value = "";
+    form.querySelector("button").disabled = true;
+    add("You", q);
+    history.push({ role: "user", content: q });
+    const pending = add("Coach", "thinking…");
+    try {
+      const r = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: history.slice(-11) }),
+      });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const out = await r.json();
+      pending.lastChild.textContent = out.answer.replaceAll("**", "");
+      history.push({ role: "assistant", content: out.answer.slice(0, 1000) });
+    } catch (e) {
+      pending.lastChild.textContent = "Sorry, the coach is unavailable (" + e.message + ").";
+      history.pop();
+    } finally {
+      form.querySelector("button").disabled = false;
+      input.focus();
+    }
+  });
+})();
+</script>
 {% endblock %}

@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import delete, text
 
-from app import main, tasks
+from app import main, puzzles, tasks
 from app.db import engine, games, jobs, moves, players, reports
 
 try:
@@ -57,7 +57,7 @@ def test_upload_with_no_games_for_that_player_is_rejected():
     assert r.status_code == 422 and "No new games by dave" in r.text
 
 
-def test_report_page_draws_cited_positions():
+def test_report_page_draws_cited_positions_and_drills(monkeypatch):
     board = chess.Board()
     board.push_san("e4")
     fen = board.fen()
@@ -124,9 +124,20 @@ def test_report_page_draws_cited_positions():
                 },
             )
         )
+    drill = {
+        "id": "abc12",
+        "fen": chess.STARTING_FEN,
+        "moves": ["e2e4", "e7e5"],
+        "rating": 1500,
+        "popularity": 95,
+        "themes": {"opening"},
+        "openings": set(),
+    }
+    monkeypatch.setattr(puzzles, "load", lambda: [drill])
     r = client.get(f"/ui/reports/{rid}")
     assert r.status_code == 200
-    assert r.text.count("<svg") == 1
+    assert r.text.count("<svg") == 2  # one example position, one drill puzzle
+    assert "https://lichess.org/training/abc12" in r.text
     assert "Summary &lt;b&gt;text&lt;/b&gt;." in r.text  # LLM text is escaped
     assert "game phase: opening" in r.text and "engine preferred" in r.text
     assert client.get(f"/ui/reports/{uuid.uuid4()}").status_code == 404

@@ -15,16 +15,25 @@ LIST_MARKER = re.compile(r"^\s*\d+[.)]\s", re.M)  # "1. " / "2) " at line start
 MAX_CLAIMS = 8
 
 
+SLICE_NAMES = {
+    "clock": "time left",
+    "phase": "game phase",
+    "piece": "piece moved",
+    "speed": "time control",
+    "opening": "opening",
+    "clock_phase": "time left / phase",
+}
+
+
 def slice_label(s: dict) -> str:
-    names = {
-        "clock": "time left",
-        "phase": "game phase",
-        "piece": "piece moved",
-        "speed": "time control",
-        "opening": "opening",
-        "clock_phase": "time left / phase",
-    }
-    return f"{names.get(s['family'], s['family'])}: {s['value']}"
+    return f"{SLICE_NAMES.get(s['family'], s['family'])}: {s['value']}"
+
+
+def parse_slice_label(label: str) -> dict:
+    """Inverse of slice_label (stored facts keep only the label)."""
+    name, value = label.split(": ", 1)
+    family = next((f for f, n in SLICE_NAMES.items() if n == name), name)
+    return {"family": family, "value": value}
 
 
 def build_facts(
