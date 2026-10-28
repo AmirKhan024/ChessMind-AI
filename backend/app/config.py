@@ -6,6 +6,9 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql://chessmind:chessmind@localhost:5433/chessmind"
     redis_url: str = "redis://localhost:6379/0"
+    groq_api_key: str = ""
+    groq_model: str = "openai/gpt-oss-120b"
+    llm_timeout: float = 40.0
     games_cap: int = 300
     engine_path: str = "stockfish"
     engine_nodes: int = 100_000

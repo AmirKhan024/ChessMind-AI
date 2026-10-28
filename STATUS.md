@@ -27,7 +27,8 @@ States: not started / in progress / blocked / done
 
 ## Right now
 
-- **Working on:** Chunk 2 wrap-up (CI, tag). Next: Chunk 3 (Coach).
+- **Working on:** Chunk 3 (Coach).
+- **Chunk 3 plan:** No LangGraph: the report is one structured call and chat is a short tool loop, plain code is simpler (decision logged). `llm.py` Groq client (timeout, bounded retries, backoff). `grounding.py` pure-code verifier: LLM must copy numbers verbatim from facts; every number and chess move in a claim must exist in the cited weakness/evidence facts; claims must cite evidence ids of their own weakness. Up to 2 regenerations with error feedback, then deterministic template. Reports table stores method, versions, verification log. Chat = tool loop over the same facts, answer verified against that turn's tool outputs. Eval: recorded fixtures (good + deliberately bad outputs) in CI; live script measures grounding pass rate.
 - **Chunk 2 plan:** (1) Stream-decompress only the head of the newest monthly file (2026-09 is 29.2 GB; a few hundred MB holds roughly 1M games), keep standard-time-control rated games. (2) Measure eval bias: games with `%eval` vs without (rating, speed, result, length). (3) Consistency: re-label ~200 evaluated games with our 100k-node Stockfish, compare with labels from Lichess evals. (4) Choose the training labels from (2)+(3): Lichess evals if consistent and unbiased; otherwise our own engine on a random sample (tens of minutes of CPU, not days, if a few thousand games are enough). (5) One feature function over `parse_game` output, used for training and serving. (6) Logistic regression vs LightGBM, player-level split, log-loss/Brier/calibration by rating band and speed. (7) Weakness ranking: observed vs expected blunders per slice with Gamma-Poisson shrinkage and P(ratio>1). (8) Predictive validity on players with many games (early vs later games).
 
 ## Done so far
@@ -56,7 +57,7 @@ Record the result of every check of an [unverified] item from `SOURCE_OF_TRUTH.m
 | PGN headers contain ECO/opening and `[%clk]` comments | True for API export and bulk file (bulk: 99.7% of games have `%clk`; ECO/Opening headers present; Lichess `?!/?/??` NAGs present; no `GameId` header, id is end of `Site`). API Site format is `/game/<id>`. | 2026-10-28 | Real API response, 3 games |
 | Monthly dump file sizes | 2026-09: 29.2 GB, 89.6M games (~327 B/game). 2018-09: 6.8 GB. Server supports range requests; a truncated head decompresses fine. Download ~4.8 MB/s here. | 2026-10-28 | HEAD requests, `counts.txt`, 50 MB range download |
 | Selection bias in games that have evals | **10.4%** of games have `%eval` (not ~6%). Evaluated games are slower (rapid 32% vs 15%, bullet 21% vs 38%), ~59 Elo lower, fewer time forfeits (25% vs 34%). Same-labeller (our engine) blunder rate with vs without %eval: 7.92% vs 7.82%, no visible effect (198 vs 295 games). | 2026-10-28 | First 50 MB of 2026-09 (160k games), `ml/bias.py` |
-| Groq: current model name and free-tier limits | Key valid. Models listed include `openai/gpt-oss-120b`, `openai/gpt-oss-20b`, `qwen/qwen3.8-27b`. Limits: check in Chunk 3. | 2026-10-28 | `GET /openai/v1/models` |
+| Groq: current model name and free-tier limits | Key valid. Models include `openai/gpt-oss-120b` (chosen), `openai/gpt-oss-20b`, `qwen/qwen3.8-27b`. Chat call works; rate-limit headers for gpt-oss-120b on this key: **1000 requests, 8000 tokens per minute** (so prompts must stay small, eval runs paced). | 2026-10-28 | `GET /openai/v1/models` |
 
 ---
 
