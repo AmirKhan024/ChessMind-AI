@@ -1,0 +1,46 @@
+{
+  "players": 60,
+  "games_per_player": 50,
+  "moves": 111439,
+  "players_with_findings": 20,
+  "findings_per_player": 0.5833333333333334,
+  "flagged": {
+    "slices": 34,
+    "players": 20,
+    "holdout_o_over_e": 1.42726873938745,
+    "ci95": [
+      1.176365305371998,
+      1.6207891205905431
+    ],
+    "discovery_o_over_e": 1.6196118648955318,
+    "share_holdout_ratio_above_1": 0.7941176470588235
+  },
+  "control_eligible_not_flagged": {
+    "slices": 1189,
+    "players": 60,
+    "holdout_o_over_e": 1.0540548895242385,
+    "ci95": [
+      0.999959450213956,
+      1.11211351759161
+    ],
+    "discovery_o_over_e": 0.9979506644703914,
+    "share_holdout_ratio_above_1": 0.5441547518923465
+  },
+  "overall_player_level": {
+    "slices": 60,
+    "players": 60,
+    "holdout_o_over_e": 1.065933934270294,
+    "ci95": [
+      1.0063350180185153,
+      1.1315076789672807
+    ],
+    "discovery_o_over_e": 1.020601541376658,
+    "share_holdout_ratio_above_1": 0.6
+  },
+  "speeds": {
+    "bullet": 0.979,
+    "rapid": 0.012,
+    "blitz": 0.008,
+    "classical": 0.001
+  }
+}

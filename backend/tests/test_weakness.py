@@ -41,3 +41,12 @@ def test_few_findings_when_player_matches_peers():
 def test_confidence_shrinks_thin_slices():
     assert prob_ratio_above_one(3, 1.0) < prob_ratio_above_one(30, 10.0)
     assert prob_ratio_above_one(0, 5.0) < 0.5
+
+
+def test_shipped_model_predicts_sane_probabilities():
+    from app.features import FEATURES
+    from app.peer_model import expected_blunder
+
+    row = dict.fromkeys(FEATURES, 1.0) | {"speed": "blitz", "piece": "N", "phase": "middlegame"}
+    p = expected_blunder([row, row | {"clock_before": 3.0, "clock_frac": 0.01}])
+    assert ((p > 0) & (p < 1)).all()
