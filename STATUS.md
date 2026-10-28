@@ -4,8 +4,8 @@
 > Update this file at the end of every session, before finishing.
 
 **Last updated:** 2026-10-28
-**Current chunk:** Chunk 0, Foundation
-**Overall state:** Chunk 0 built and verified locally; CI not yet run (not pushed)
+**Current chunk:** Chunk 1, Ingest and analyse
+**Overall state:** Chunk 0 done (CI green); Chunk 1 in progress
 
 ---
 
@@ -13,7 +13,7 @@
 
 | Chunk | Name | State | Tag |
 |---|---|---|---|
-| 0 | Foundation | in progress (local done, CI unverified) | |
+| 0 | Foundation | done | chunk-0-done |
 | 1 | Ingest and analyse | not started | |
 | 2 | Weakness engine | not started | |
 | 3 | Coach | not started | |
