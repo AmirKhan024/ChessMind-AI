@@ -1,0 +1,2 @@
+backend/models/** binary
+*.sh text eol=lf

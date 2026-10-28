@@ -1,5 +1,5 @@
-"""Compare our engine's labels with labels from Lichess %eval on the same moves,
-and our-engine blunder rates in games with vs without %eval (selection bias).
+"""Agreement between our engine's labels and Lichess-%eval labels on the same moves, and
+our-engine blunder rates in games with vs without %eval (selection bias).
 Usage: python -m ml.consistency DIR"""
 
 import sys
@@ -7,29 +7,22 @@ import sys
 import pandas as pd
 
 d = sys.argv[1]
-c = pd.read_json(f"{d}/consistency_labels.jsonl", lines=True)
-c = c[c.has_lichess]
-c["ours_b"] = c.ours == "blunder"
-c["li_b"] = c.lichess == "blunder"
-print(f"moves={len(c)} games={c.game_id.nunique()}")
-print(pd.crosstab(c.ours.fillna("ok"), c.lichess.fillna("ok"), margins=True))
-both = (c.ours_b & c.li_b).sum()
-print(f"blunder rate ours={c.ours_b.mean():.4f} lichess={c.li_b.mean():.4f}")
+c = pd.read_json(f"{d}/consistency_ours.jsonl", lines=True)
+r = pd.read_json(f"{d}/random_ours.jsonl", lines=True)
+both = c[c.has_lichess]
+print(f"moves labelled both ways={len(both)} games={both.game_id.nunique()}")
+print(pd.crosstab(both.label.fillna("ok"), both.lichess_label.fillna("ok"), margins=True))
+ours, theirs = both.label == "blunder", both.lichess_label == "blunder"
 print(
-    f"of lichess blunders, ours agree={both / c.li_b.sum():.3f}; "
-    f"of our blunders, lichess agree={both / c.ours_b.sum():.3f}"
+    f"blunder rate ours={ours.mean():.4f} lichess={theirs.mean():.4f} "
+    f"ratio={ours.sum() / theirs.sum():.3f}"
 )
-print("by speed:", c.groupby("speed")[["ours_b", "li_b"]].mean().round(4).to_dict("index"))
-
-r = pd.read_json(f"{d}/random_labels.jsonl", lines=True)
-r["ours_b"] = r.ours == "blunder"
-all_c = pd.read_json(f"{d}/consistency_labels.jsonl", lines=True)
-all_c["ours_b"] = all_c.ours == "blunder"
-print("\nselection bias, our labels, all moves:")
-for name, x in [("with %eval", all_c), ("without %eval", r)]:
-    se = (x.ours_b.mean() * (1 - x.ours_b.mean()) / len(x)) ** 0.5
-    by = x.groupby("speed").ours_b.mean().round(4).to_dict()
+print(
+    f"lichess blunders we also flag={(ours & theirs).sum() / theirs.sum():.3f}; "
+    f"our blunders lichess also flags={(ours & theirs).sum() / ours.sum():.3f}"
+)
+for name, x in [("with %eval", c), ("without %eval", r)]:
     print(
-        f"  {name}: games={x.game_id.nunique()} moves={len(x)} "
-        f"blunder_rate={x.ours_b.mean():.4f} (se {se:.4f}) by speed {by}"
+        f"{name}: games={x.game_id.nunique()} moves={len(x)} our blunder rate="
+        f"{x.blunder.mean():.4f} by speed {x.groupby('speed').blunder.mean().round(4).to_dict()}"
     )
