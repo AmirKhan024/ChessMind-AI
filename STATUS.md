@@ -27,7 +27,8 @@ States: not started / in progress / blocked / done
 
 ## Right now
 
-- **Working on:** Chunk 1. Facts verified; next: Stockfish benchmark.
+- **Working on:** Chunk 1. Facts verified, benchmark done; next: DB schema + Lichess ingest.
+- **Risk for Chunk 2:** bulk-file evals come from Lichess server analysis, not our 100k-node limit. Labeling 100k+ bulk games ourselves would take days of CPU at 8.6 pos/s/core. Need to check label consistency between the two sources on a sample before building the baseline.
 - **Chunk 1 plan:** Stockfish 19 (pinned binary) in the worker image; benchmark nodes limits on real-game positions. Tables via Alembic: games, moves, position_cache, jobs. Lichess fetch = one streamed NDJSON request on a dedicated RQ worker for the `lichess` queue (concurrency 1); on 429 the job sleeps 60s inside that single worker, which pauses the whole queue with no extra machinery. One analysis job per game on the `analysis` queue (N workers), writing per-game results so re-runs skip finished games. PGN upload endpoint uses the same parser. Same as source of truth except the 429 mechanism (simpler).
 
 ## Done so far
@@ -64,7 +65,7 @@ Only measured numbers go here. These later feed `docs/results.md` and the README
 
 | Metric | Value | Conditions | Date |
 |---|---|---|---|
-| Stockfish positions/sec per core | | | |
+| Stockfish positions/sec per core | 25k nodes: 30.5; 50k: 16.3; **100k: 8.6**; 200k: 4.5; 1M: 0.92. Label agreement vs 1M-node reference: 0.898 / 0.902 / **0.939** / 0.943; blunder recall 0.82 / 0.82 / 0.88 / 0.94 (only 17 ref blunders, small sample) | SF19, 1 thread, 16MB hash cleared per position, 250 positions from 5 real games, Docker on owner laptop (24 logical CPUs). `scripts/bench_stockfish.py` | 2026-10-28 |
 | Position cache hit rate | | | |
 | Time to report per 100 games (p50/p95) | | | |
 | Baseline model calibration (Brier / log-loss) | | | |
@@ -84,6 +85,7 @@ Log every deviation from a "Recommended" item, and any important choice.
 | 2026-10-28 | Alembic deferred to Chunk 1 | No tables yet; adding it now is unused code | Empty migrations now |
 | 2026-10-28 | Blunder thresholds 5/10/15 win-% points | Matches Lichess source (the 10/20/30 in source of truth was wrong) | 10/20/30 |
 | 2026-10-28 | Stockfish 19 official linux-x86-64-universal binary, pinned | Latest release (2026-09-05); Debian package lags | apt stockfish |
+| 2026-10-28 | Default engine limit 100k nodes (configurable) | Best speed/agreement trade-off in benchmark; nodes (not time) for reproducibility | 50k (agreement 0.90), 200k (2x slower for +0.4pt) |
 | 2026-10-28 | uv + `uv.lock` for pinned deps | Reproducible builds, fast CI | pip + requirements.txt |
 
 ---

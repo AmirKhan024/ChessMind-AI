@@ -9,10 +9,12 @@ dependencies = [
     "psycopg[binary]",
     "redis",
     "rq",
+    "chess",
+    "httpx",
 ]
 
 [dependency-groups]
-dev = ["pytest", "httpx", "ruff"]
+dev = ["pytest", "ruff"]
 
 [tool.ruff]
 line-length = 100
