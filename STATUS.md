@@ -5,7 +5,7 @@
 
 **Last updated:** 2026-10-28
 **Current chunk:** Chunk 5, Production and cloud (not started)
-**Overall state:** Chunks 0-4 done (CI green up to 37b79cc). Open: re-fit calibration after the mate-label fix (see Right now)
+**Overall state:** Chunks 0-4 done (CI green). Open: re-fit calibration after the mate-label fix (see Right now)
 
 ---
 
@@ -17,7 +17,7 @@
 | 1 | Ingest and analyse | done | chunk-1-done |
 | 2 | Weakness engine | done | chunk-2-done |
 | 3 | Coach | done | chunk-3-done |
-| 4 | Product surface | done | |
+| 4 | Product surface | done | chunk-4-done |
 | 5 | Production and cloud | not started | |
 | 6 | Evidence and polish | not started | |
 
