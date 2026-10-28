@@ -17,9 +17,8 @@
 
   {% if running %}
     <p class="muted">
-      {% if queue_position is none %}Running now.
-      {% elif queue_position == 0 %}Next in the queue.
-      {% else %}Queue position: {{ queue_position }} {{ "task" if queue_position == 1 else "tasks" }} ahead of you.
+      {% if not queue_position %}Your games are being worked on now.
+      {% else %}Queue position: {{ queue_position }} {{ "task" if queue_position == 1 else "tasks" }} from other players ahead of you.
       {% endif %}
       This page refreshes every 3 seconds.
     </p>

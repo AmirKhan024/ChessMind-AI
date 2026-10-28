@@ -180,10 +180,15 @@ def analyse_game(game_id: str, job_id: str, sf=None) -> None:
         finally:
             if own:
                 sf.quit()
+        scores = [_score(ev) for ev in evals]
+        # The cache stores mate as white's mate count, and "mate in 0" loses who was mated;
+        # in a checkmate the side to move is the one mated.
+        if final.is_checkmate():
+            scores[-1] = chess.engine.PovScore(chess.engine.Mate(0), final.turn)
         for i, r in enumerate(rows):
             pov = chess.WHITE if r["color"] == "white" else chess.BLACK
-            r["wc_before"] = win_chances(_score(evals[i]), pov)
-            r["wc_after"] = win_chances(_score(evals[i + 1]), pov)
+            r["wc_before"] = win_chances(scores[i], pov)
+            r["wc_after"] = win_chances(scores[i + 1], pov)
             r["best_uci"] = evals[i]["best_uci"]
             r["label"] = classify(r["wc_before"], r["wc_after"])
         with engine.begin() as conn:

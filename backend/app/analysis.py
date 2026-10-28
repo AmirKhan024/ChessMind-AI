@@ -13,7 +13,8 @@ def win_chances(score: chess.engine.PovScore, pov: chess.Color) -> float:
     s = score.pov(pov)
     mate = s.mate()
     if mate is not None:
-        cp = (21 - min(10, abs(mate))) * 100 * (1 if mate > 0 else -1)
+        # Mate in 0 has no sign: Mate(0) is "mated", MateGiven "gave mate"; compare instead.
+        cp = (21 - min(10, abs(mate))) * 100 * (1 if s > chess.engine.Cp(0) else -1)
     else:
         cp = max(-1000, min(1000, s.score()))
     return 2 / (1 + math.exp(-0.00368208 * cp)) - 1

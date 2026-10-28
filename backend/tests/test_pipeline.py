@@ -109,3 +109,27 @@ def test_player_moves_uses_shared_features_and_model(run):
     assert len(df) == own
     assert df.expected.between(0, 1).all()
     assert df.blunder.sum() > 0
+
+
+class MateEngine(FakeEngine):
+    """Like Stockfish: a checkmated position scores mate 0 for the side to move."""
+
+    def analyse(self, board, limit):
+        if board.is_checkmate():
+            return {"score": chess.engine.PovScore(chess.engine.Mate(0), board.turn), "pv": []}
+        return {"score": chess.engine.PovScore(chess.engine.Cp(0), chess.WHITE), "pv": []}
+
+
+def test_checkmating_move_is_not_a_blunder():
+    for t in (moves, games, jobs, players, position_cache):
+        with engine.begin() as c:
+            c.execute(delete(t))
+    pgn = '[White "alice"]\n[Black "bob"]\n[Result "0-1"]\n\n1. f3 e5 2. g4 Qh4# 0-1\n'
+    tasks.save_games("bob", [pgn], "upload")
+    job_id, _ = _new_job("bob", "analysing")
+    with engine.connect() as c:
+        gid = c.scalar(select(games.c.id))
+    tasks.analyse_game(gid, job_id, sf=MateEngine())
+    with engine.connect() as c:
+        last = c.execute(select(moves).where(moves.c.san == "Qh4#")).one()
+    assert last.label is None and last.wc_after > 0.99

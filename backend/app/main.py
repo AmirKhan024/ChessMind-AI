@@ -6,6 +6,7 @@ from fastapi import FastAPI, Form, HTTPException, Response, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app import coach, tasks, web
 from app.config import settings
@@ -15,6 +16,7 @@ from app.weakness import find_weaknesses, player_moves
 
 app = FastAPI(title="ChessMind AI")
 app.include_router(web.router)
+app.add_exception_handler(StarletteHTTPException, web.http_error)
 MAX_UPLOAD_BYTES = 5_000_000
 
 

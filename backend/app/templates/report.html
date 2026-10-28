@@ -47,9 +47,11 @@
 <div class="card">No recurring weakness stood out with enough confidence.</div>
 {% endfor %}
 
+{% if claims %}
 <p class="muted">Red arrow: your move. Green arrow: the engine's choice.
   Drill puzzles come from the Lichess puzzle database, picked near your average rating
   ({{ rating or "unknown" }}) for the themes linked to each weakness; they open on Lichess.</p>
+{% endif %}
 
 <h2>Ask the coach</h2>
 <div class="card">

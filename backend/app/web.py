@@ -6,6 +6,7 @@ from pathlib import Path
 import chess
 import chess.svg
 from fastapi import APIRouter, Form, HTTPException, Request, UploadFile
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import case, func, select, tuple_
@@ -22,6 +23,13 @@ BEST_COLOR = "#2e9d4f88"
 
 def _page(request: Request, name: str, status_code: int = 200, **ctx) -> HTMLResponse:
     return templates.TemplateResponse(request, name, ctx, status_code=status_code)
+
+
+async def http_error(request: Request, exc):
+    """UI pages get an HTML error page; the JSON API keeps FastAPI's JSON errors."""
+    if request.url.path == "/" or request.url.path.startswith("/ui/"):
+        return _page(request, "error.html", exc.status_code, detail=exc.detail)
+    return await http_exception_handler(request, exc)
 
 
 @router.get("/", response_class=HTMLResponse)

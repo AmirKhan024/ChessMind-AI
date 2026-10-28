@@ -41,7 +41,7 @@ def test_job_page_shows_progress_queue_position_and_refresh(monkeypatch):
         c.execute(jobs.update().values(total=10, done=3))
     r = client.get(f"/ui/jobs/{job_id}")
     assert r.status_code == 200
-    assert "3 of 10 done" in r.text and "7 tasks ahead" in r.text
+    assert "3 of 10 done" in r.text and "7 tasks from other players ahead" in r.text
     assert 'http-equiv="refresh"' in r.text
     with engine.begin() as c:
         c.execute(jobs.update().values(status="done", done=10))
@@ -156,3 +156,12 @@ def test_queue_position_counts_jobs_ahead(monkeypatch):
     assert tasks.queue_position("mine", "analysing") == 2
     assert tasks.queue_position("absent", "analysing") is None
     assert tasks.queue_position("mine", "done") is None
+
+
+def test_ui_errors_are_html_and_api_errors_stay_json():
+    r = client.get("/ui/reports/nope")
+    assert r.status_code == 404 and "report not found" in r.text and "<html" in r.text
+    r = client.post("/ui/players/nobody/report")
+    assert r.status_code == 404 and "<html" in r.text
+    r = client.get("/reports/nope")
+    assert r.status_code == 404 and r.json() == {"detail": "report not found"}

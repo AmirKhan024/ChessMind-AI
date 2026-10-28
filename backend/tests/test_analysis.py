@@ -25,3 +25,10 @@ def test_classify_uses_lichess_thresholds():
     assert classify(0.0, -0.1) == "inaccuracy"
     assert classify(0.0, -0.2) == "mistake"
     assert classify(0.5, 0.2) == "blunder"
+
+
+def test_mate_in_zero_keeps_who_gave_mate():
+    # Black to move and checkmated: white gave mate.
+    mated_black = chess.engine.PovScore(chess.engine.Mate(0), chess.BLACK)
+    assert win_chances(mated_black, chess.WHITE) > 0.99
+    assert win_chances(mated_black, chess.BLACK) < -0.99
