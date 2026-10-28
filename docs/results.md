@@ -33,3 +33,10 @@ Flagged slices keep excess blunders in held-out games (79% of them above 1), but
 
 ## Weakness engine
 Gamma(5,5) prior on the observed/expected ratio, report slices with P(ratio>1) >= 0.975, >= 3 blunders, <= 60% of the player's moves. Null simulation (`tests`-style, planted effects): ~0.18 false findings per player, 96% power for a 2.4x effect at that threshold. On two real accounts analysed end to end (50 and 20 games) both were at peer level overall (135 vs 138 and 38 vs 52 expected blunders) and no weakness was reported.
+
+# Results (Chunk 3, coach)
+
+Groq `openai/gpt-oss-120b`, 3 real Lichess players (60 games each, analysed by this app), `ml/eval_coach.py`. Small samples.
+
+- **Reports** (strict verifier: every number copied from the cited facts, every move from cited examples, each claim must quote its weakness's numbers): 3/6 grounded on the first try, 5/6 after up to 2 regenerations with error feedback, 1/6 replaced by the deterministic template. No ungrounded report was shown. Median latency 4.8 s (max 38 s), about 5.4k tokens per report. An earlier, looser verifier passed 12/12, but those reports quoted no numbers, so the rule was tightened.
+- **Chat**: in-scope questions 4/4 grounded after the overview and weakness list were put in the prompt (2/6 before, due to Groq tool-loop errors). Out-of-scope questions (best move in an unseen position, opening advice): 4/6 answered with a refusal to analyse, 2/6 were blocked by the verifier and replaced by a fixed refusal.

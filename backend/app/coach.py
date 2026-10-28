@@ -199,9 +199,10 @@ TOOLS = [
 CHAT_RULES = (
     RULES
     + """
-Answer questions about this player's analysed games using the tools; call a tool before
-quoting any number. If asked for analysis the tools cannot provide (for example "what is
-the best move here?" for a position not in the examples, or general chess theory), say you
+Answer questions about this player's analysed games from FACTS below; call get_examples
+(at most once or twice) only when you need example positions. If asked for analysis the
+tools cannot provide (for example "what is the best move here?" for a position not in the
+examples, or general chess theory), say you
 can only show the engine's stored results for their games. Keep answers under 120 words."""
 )
 
@@ -226,8 +227,15 @@ def _run_tool(facts: dict, name: str, args: dict):
 
 def answer(facts: dict, history: list[dict], chat=llm.chat) -> dict:
     """history: [{"role": "user"|"assistant", "content": str}], last item is the question."""
-    messages = [{"role": "system", "content": CHAT_RULES}] + history
-    outputs, tokens, errors = [], 0, []
+    # Overview and weakness list are small, so give them up front; the model then only needs
+    # a tool call for example positions. They count as allowed facts for verification.
+    given = {
+        "overview": _run_tool(facts, "get_overview", {}),
+        "weaknesses": _run_tool(facts, "get_weaknesses", {}),
+    }
+    system = CHAT_RULES + "\nFACTS:\n" + json.dumps(given)
+    messages = [{"role": "system", "content": system}] + history
+    outputs, tokens, errors = [given], 0, []
     try:
         for attempt in range(1 + CHAT_REGENERATIONS):
             for rnd in range(MAX_TOOL_ROUNDS + 1):

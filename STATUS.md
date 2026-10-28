@@ -16,7 +16,7 @@
 | 0 | Foundation | done | chunk-0-done |
 | 1 | Ingest and analyse | done | chunk-1-done |
 | 2 | Weakness engine | done | chunk-2-done |
-| 3 | Coach | not started | |
+| 3 | Coach | done locally, CI pending | |
 | 4 | Product surface | not started | |
 | 5 | Production and cloud | not started | |
 | 6 | Evidence and polish | not started | |
@@ -27,7 +27,7 @@ States: not started / in progress / blocked / done
 
 ## Right now
 
-- **Working on:** Chunk 3 (Coach).
+- **Working on:** Chunk 3 wrap-up. Next: Chunk 4 (UI). Open items for Chunk 3: re-record `tests/fixtures/coach/recorded.jsonl` after prompt changes (`python -m ml.eval_coach beny627 goodplayscap husnu1995 --reports 2`); report first-try pass rate is only 50%, try a clearer prompt or gpt-oss-20b comparison.
 - **Chunk 3 plan:** No LangGraph: the report is one structured call and chat is a short tool loop, plain code is simpler (decision logged). `llm.py` Groq client (timeout, bounded retries, backoff). `grounding.py` pure-code verifier: LLM must copy numbers verbatim from facts; every number and chess move in a claim must exist in the cited weakness/evidence facts; claims must cite evidence ids of their own weakness. Up to 2 regenerations with error feedback, then deterministic template. Reports table stores method, versions, verification log. Chat = tool loop over the same facts, answer verified against that turn's tool outputs. Eval: recorded fixtures (good + deliberately bad outputs) in CI; live script measures grounding pass rate.
 - **Chunk 2 plan:** (1) Stream-decompress only the head of the newest monthly file (2026-09 is 29.2 GB; a few hundred MB holds roughly 1M games), keep standard-time-control rated games. (2) Measure eval bias: games with `%eval` vs without (rating, speed, result, length). (3) Consistency: re-label ~200 evaluated games with our 100k-node Stockfish, compare with labels from Lichess evals. (4) Choose the training labels from (2)+(3): Lichess evals if consistent and unbiased; otherwise our own engine on a random sample (tens of minutes of CPU, not days, if a few thousand games are enough). (5) One feature function over `parse_game` output, used for training and serving. (6) Logistic regression vs LightGBM, player-level split, log-loss/Brier/calibration by rating band and speed. (7) Weakness ranking: observed vs expected blunders per slice with Gamma-Poisson shrinkage and P(ratio>1). (8) Predictive validity on players with many games (early vs later games).
 
@@ -74,7 +74,8 @@ Only measured numbers go here. These later feed `docs/results.md` and the README
 | Our labels vs Lichess-%eval labels | Our 100k-node labels flag 1.16x more blunders (8.03% vs 6.94%, 13.4k moves, 198 games); we catch 93.6% of Lichess blunders; 80.9% of ours are Lichess blunders. Fixed with logit shift | 200 random evaluated games, SF19 100k nodes | 2026-10-28 |
 | Predictive validity result | Flagged slices holdout O/E 1.43 (95% CI 1.18-1.62) vs 1.05 (1.00-1.11) for unflagged eligible slices; discovery was 1.62. 34 slices, 20 of 60 players. **98% bullet games**, one month. | 60 players x 50 games, first half discovery/second half holdout, `ml/validity.py` | 2026-10-28 |
 | Calibration on serving labels | After logit shift: O/E 0.98 (0.91-1.05) on 295 random non-%eval games (19.8k moves); raw model was 1.23 | `ml/calibrate.py` | 2026-10-28 |
-| Grounding pass rate | | | |
+| Grounding pass rate (reports) | Strict rules (claims must quote their numbers): 3/6 grounded on first try, 5/6 after regeneration, 1/6 fell back to template; 0 ungrounded reports shown. Median latency 4.8 s, max 38 s; ~5.4k tokens/report. (An earlier, looser verifier passed 12/12, but the reports were vague and quoted no numbers, so it was tightened.) | 3 real players (60 games each), gpt-oss-120b, `ml/eval_coach.py` | 2026-10-28 |
+| Grounding pass rate (chat) | After giving overview+weaknesses up front: 4/4 in-scope answers grounded (spot check). Before: 2/6 (tool-loop HTTP 400s). Out-of-scope: 4/6 answered with a refusal; 2/6 blocked (echoed the user's own number) and replaced by the fixed refusal | same | 2026-10-28 |
 | Cost per report | | | |
 
 ---
@@ -115,3 +116,4 @@ Short entry per session: what changed, what is broken, what to do next.
 - 2026-10-28: `.env` values are wrapped in quotes; fine for python-dotenv/compose, but shell parsing must strip them.
 - 2026-10-28: Chunk 1 built. Found Lichess needs a User-Agent, `max` is soft with filters, PGN `Site` is now `/game/<id>` (use `GameId` header). Cache hit rate is low (5-7%) for single users; worth re-checking with more users. Next: Chunk 2, starting with the bulk-eval vs our-label consistency check.
 - 2026-10-28: Chunk 2 built and measured; results in `docs/results.md`. Caveats: validity sample is 98% bullet (players with many games in a 50 MB head); only 1 month of data. If time allows, a larger/other-month sample would firm this up. `GET /players/{u}/weaknesses` works on real analysed players. Labelling 3,000 games took ~2.5 h of laptop CPU.
+- 2026-10-28: Chunk 3 built. Coach report + chat with code-only grounding verifier, regeneration, template/refusal fallback, reports table with versions. Live eval on 3 real players. Found and fixed: vague reports passed a loose verifier; chat tool loop hit Groq 400 (`tool_choice none` but model called a tool). 43 tests incl. replay of real recorded outputs.
