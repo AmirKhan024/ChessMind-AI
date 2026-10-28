@@ -14,7 +14,7 @@
 | Chunk | Name | State | Tag |
 |---|---|---|---|
 | 0 | Foundation | done | chunk-0-done |
-| 1 | Ingest and analyse | not started | |
+| 1 | Ingest and analyse | in progress | |
 | 2 | Weakness engine | not started | |
 | 3 | Coach | not started | |
 | 4 | Product surface | not started | |
@@ -27,8 +27,8 @@ States: not started / in progress / blocked / done
 
 ## Right now
 
-- **Working on:** Chunk 0 wrap-up
-- **Next step:** Owner pushes to GitHub so CI can run; then Chunk 1 (verify Lichess facts + Stockfish benchmark first)
+- **Working on:** Chunk 1. Facts verified; next: Stockfish benchmark.
+- **Chunk 1 plan:** Stockfish 19 (pinned binary) in the worker image; benchmark nodes limits on real-game positions. Tables via Alembic: games, moves, position_cache, jobs. Lichess fetch = one streamed NDJSON request on a dedicated RQ worker for the `lichess` queue (concurrency 1); on 429 the job sleeps 60s inside that single worker, which pauses the whole queue with no extra machinery. One analysis job per game on the `analysis` queue (N workers), writing per-game results so re-runs skip finished games. PGN upload endpoint uses the same parser. Same as source of truth except the 429 mechanism (simpler).
 
 ## Done so far
 
@@ -47,14 +47,14 @@ Record the result of every check of an [unverified] item from `SOURCE_OF_TRUTH.m
 
 | Fact | Result | Date | How checked |
 |---|---|---|---|
-| Lichess user-games export supports `since` and `max` | | | |
-| Public games need no token | | | |
-| Lichess PGN export by the player themselves | | | |
-| Lichess win-% formula and blunder thresholds | | | |
-| PGN headers contain ECO/opening and `[%clk]` comments | | | |
+| Lichess user-games export supports `since` and `max` | Yes. NDJSON with `Accept: application/x-ndjson`; `clocks`, `opening`, `pgnInJson`, `evals` params work. **Requests without a descriptive User-Agent get HTTP 404** (curl default UA failed); must send a UA. | 2026-10-28 | Real requests + lichess-org/api OpenAPI spec |
+| Public games need no token | True. Spec: stream throttled to 20 games/s anonymous, 30 authenticated. Token in `.env` is valid (`/api/account` 200) but not needed. | 2026-10-28 | Real request + spec |
+| Lichess PGN export by the player themselves | Same endpoint returns PGN (default format) for any public user, so a user can download a PGN file and upload it. UI download page not separately checked. | 2026-10-28 | Spec |
+| Lichess win-% formula and blunder thresholds | Formula correct: `wc = 2/(1+exp(-0.00368208*cp))-1`, cp clamped to ±1000; mate n → cp=(21-min(10,|n|))*100. **Correction:** thresholds are 0.1/0.2/0.3 on the wc scale (−1..1) = **5/10/15 win-% points**, not 10/20/30. Plan updated to use Lichess values. | 2026-10-28 | lila source: `ui/lib/src/ceval/winningChances.ts`, `modules/tree/src/main/Advice.scala` |
+| PGN headers contain ECO/opening and `[%clk]` comments | True for API export (`[ECO`, `[Opening`, `[%clk` present). Bulk files still to check in Chunk 2. | 2026-10-28 | Real API response, 3 games |
 | Monthly dump file sizes | | | |
 | Selection bias in games that have evals | | | |
-| Groq: current model name and free-tier limits | | | |
+| Groq: current model name and free-tier limits | Key valid. Models listed include `openai/gpt-oss-120b`, `openai/gpt-oss-20b`, `qwen/qwen3.8-27b`. Limits: check in Chunk 3. | 2026-10-28 | `GET /openai/v1/models` |
 
 ---
 
@@ -82,6 +82,8 @@ Log every deviation from a "Recommended" item, and any important choice.
 |---|---|---|---|
 | 2026-10-28 | Queue: RQ (one worker consuming lichess, analysis, report) | Simplest; split into per-queue workers when Chunk 1 needs it | Arq, Celery |
 | 2026-10-28 | Alembic deferred to Chunk 1 | No tables yet; adding it now is unused code | Empty migrations now |
+| 2026-10-28 | Blunder thresholds 5/10/15 win-% points | Matches Lichess source (the 10/20/30 in source of truth was wrong) | 10/20/30 |
+| 2026-10-28 | Stockfish 19 official linux-x86-64-universal binary, pinned | Latest release (2026-09-05); Debian package lags | apt stockfish |
 | 2026-10-28 | uv + `uv.lock` for pinned deps | Reproducible builds, fast CI | pip + requirements.txt |
 
 ---
@@ -90,4 +92,5 @@ Log every deviation from a "Recommended" item, and any important choice.
 
 Short entry per session: what changed, what is broken, what to do next.
 
-- 2026-10-28: Chunk 0 built and run locally. `.env` has `GROQ_API_KEY ` with a space before `=` (works with python-dotenv, fragile elsewhere; consider removing it). Docker Desktop was not running at start; I started it. Not tagged until CI is green.
+- 2026-10-28: Chunk 0 built and run locally. `.env` has `GROQ_API_KEY ` with a space before `=` (works with python-dotenv, fragile elsewhere; consider removing it). Docker Desktop was not running at start; I started it. Pushed; CI green; tagged `chunk-0-done`.
+- 2026-10-28: `.env` values are wrapped in quotes; fine for python-dotenv/compose, but shell parsing must strip them.
