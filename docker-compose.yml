@@ -1,5 +1,8 @@
 x-backend: &backend
   build: ./backend
+  # On SIGTERM an RQ worker finishes its current job first (a game takes ~5-40 s); Docker's
+  # default 10 s cut games off mid-analysis on every deploy.
+  stop_grace_period: 60s
   env_file:
     - path: .env
       required: false
@@ -7,6 +10,8 @@ x-backend: &backend
     DATABASE_URL: postgresql://chessmind:chessmind@db:5432/chessmind
     REDIS_URL: redis://redis:6379/0
     GAMES_CAP: ${GAMES_CAP:-300}
+    RATE_LIMIT: ${RATE_LIMIT:-true}
+    ANALYSIS_WORKERS: ${ANALYSIS_WORKERS:-8}
   depends_on:
     db: { condition: service_healthy }
     redis: { condition: service_healthy }
@@ -14,8 +19,9 @@ x-backend: &backend
 services:
   api:
     <<: *backend
-    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
-    ports: ["8000:8000"]
+    # --proxy-headers: behind a reverse proxy the per-IP rate limit sees the real client IP.
+    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-access-log --proxy-headers"]
+    ports: ["${API_PORT:-8000}:8000"]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/health')"]
       interval: 5s
@@ -24,18 +30,48 @@ services:
   # Exactly one worker on the lichess queue: Lichess allows one request at a time.
   worker-lichess:
     <<: *backend
-    command: ["rq", "worker", "--url", "redis://redis:6379/0", "lichess"]
+    command: ["python", "-m", "app.worker", "lichess"]
     depends_on:
       api: { condition: service_healthy }
 
-  # Stockfish runs single-threaded per worker; scale with ANALYSIS_WORKERS.
+  # Stockfish runs single-threaded per worker; scale with ANALYSIS_WORKERS. On the dev
+  # laptop total throughput was 19 positions/s with 4, 26 with 8, 31 with 16 (see STATUS).
   worker-analysis:
     <<: *backend
-    command: ["rq", "worker", "--url", "redis://redis:6379/0", "analysis"]
+    command: ["python", "-m", "app.worker", "analysis"]
     deploy:
-      replicas: ${ANALYSIS_WORKERS:-4}
+      replicas: ${ANALYSIS_WORKERS:-8}
     depends_on:
       api: { condition: service_healthy }
+
+  # Reports: building facts is CPU work and the LLM calls are slow, so not in a web request.
+  worker-report:
+    <<: *backend
+    command: ["python", "-m", "app.worker", "report"]
+    deploy:
+      replicas: ${REPORT_WORKERS:-1}  # Groq tokens/minute, not CPU, limits reports
+    depends_on:
+      api: { condition: service_healthy }
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    volumes:
+      - ./infra/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - promdata:/prometheus
+    ports: ["${PROMETHEUS_PORT:-9090}:9090"]
+    depends_on: [api]
+
+  grafana:
+    image: grafana/grafana:12.1.0
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./infra/monitoring/grafana:/etc/grafana/provisioning:ro
+      - ./infra/monitoring/dashboards:/var/lib/grafana/dashboards:ro
+    ports: ["${GRAFANA_PORT:-3000}:3000"]
+    depends_on: [prometheus]
 
   db:
     image: postgres:17
@@ -43,7 +79,7 @@ services:
       POSTGRES_USER: chessmind
       POSTGRES_PASSWORD: chessmind
       POSTGRES_DB: chessmind
-    ports: ["5433:5432"]
+    ports: ["${DB_PORT:-5433}:5432"]
     volumes: [pgdata:/var/lib/postgresql/data]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U chessmind"]
@@ -59,3 +95,4 @@ services:
 
 volumes:
   pgdata:
+  promdata:

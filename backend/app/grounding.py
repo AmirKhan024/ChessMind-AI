@@ -12,6 +12,7 @@ NUMBER = re.compile(r"(?<![\w.])\d+(?:\.\d+)?")
 TOKEN = re.compile(r"[A-Za-z0-9=+#-]+")
 SAN = re.compile(r"(?:O-O(?:-O)?|[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?)[+#]?")
 LIST_MARKER = re.compile(r"^\s*\d+[.)]\s", re.M)  # "1. " / "2) " at line start
+FIELD_NAME = re.compile(r"\b[a-z]+(?:_[a-z]+)+\b")  # e.g. observed_blunders
 MAX_CLAIMS = 8
 
 
@@ -36,8 +37,27 @@ def parse_slice_label(label: str) -> dict:
     return {"family": family, "value": value}
 
 
+# 3,829 of the 1.07M training moves are by players rated 2700+ (366 at 2900+), so above
+# this the peer expectation is mostly extrapolation.
+THIN_PEER_RATING = 2700
+PEER_DATA_NOTE = (
+    "Very few players at your rating are in the peer model's training data, so comparisons "
+    "with peers are less certain than for most players."
+)
+
+
+def _example(details: dict, e: str) -> dict:
+    return {"id": e, **details[e]}
+
+
 def build_facts(
-    games: int, moves: int, overall: dict, weaknesses: list[dict], details: dict[str, dict]
+    games: int,
+    moves: int,
+    overall: dict,
+    weaknesses: list[dict],
+    details: dict[str, dict],
+    breakdown: list[dict] = (),
+    rating: int | None = None,
 ) -> dict:
     """details: evidence id -> {move_number, played, best, win_before, win_after, clock_s}."""
     out = []
@@ -46,6 +66,7 @@ def build_facts(
             {
                 "id": f"W{i}",
                 "slice": slice_label(w["slice"]),
+                "compared_with": w.get("compared_with", "peers"),
                 "moves": w["moves"],
                 "observed_blunders": w["observed_blunders"],
                 "expected_blunders": round(w["expected_blunders"], 1),
@@ -54,16 +75,37 @@ def build_facts(
                 "observed_rate_pct": round(w["observed_rate"] * 100, 1),
                 "expected_rate_pct": round(w["expected_rate"] * 100, 1),
                 "games_lost_equivalent": round(w["cost_win_pct"] / 100, 1),
-                "examples": [{"id": e, **details[e]} for e in w["evidence"] if e in details],
+                "examples": [_example(details, e) for e in w["evidence"] if e in details],
             }
         )
-    return {
+    o, e = overall["observed_blunders"], overall["expected_blunders"]
+    facts = {
         "games": games,
         "moves": moves,
-        "overall_observed_blunders": overall["observed_blunders"],
-        "overall_expected_blunders": round(overall["expected_blunders"], 1),
+        "overall_observed_blunders": o,
+        "overall_expected_blunders": round(e, 1),
+        "overall_ratio": round(o / e, 2) if e else None,
         "weaknesses": out,
+        "breakdown": [
+            {
+                "slice": slice_label(b["slice"]),
+                "moves": b["moves"],
+                "blunders": b["observed_blunders"],
+                "rate_pct": round(b["observed_rate"] * 100, 1),
+                "peer_rate_pct": round(b["expected_rate"] * 100, 1),
+                "ratio_vs_peers": None if b["ratio"] is None else round(b["ratio"], 2),
+                "examples": [_example(details, x) for x in b["evidence"] if x in details],
+            }
+            for b in breakdown
+        ],
     }
+    if rating is not None and rating >= THIN_PEER_RATING:
+        facts["peer_data_note"] = PEER_DATA_NOTE
+    return facts
+
+
+def without_examples(rows: list[dict]) -> list[dict]:
+    return [{k: v for k, v in r.items() if k != "examples"} for r in rows]
 
 
 def _numbers(obj) -> set[float]:
@@ -95,6 +137,8 @@ def check_text(text: str, nums: set[float], sans: set[str]) -> list[str]:
         tok = tok.rstrip("-=")
         if SAN.fullmatch(tok) and tok not in sans:
             errors.append(f"move {tok} is not an example move you were given")
+    for name in sorted(set(FIELD_NAME.findall(text))):
+        errors.append(f"write plain English instead of the field name {name}")
     return errors
 
 
@@ -106,9 +150,11 @@ def validate_report(facts: dict, report) -> list[str]:
     if not isinstance(claims, list) or not 0 < len(claims) <= MAX_CLAIMS:
         return [f"`claims` must be a list of 1-{MAX_CLAIMS} items"]
     by_id = {w["id"]: w for w in facts["weaknesses"]}
-    top_level = {k: v for k, v in facts.items() if k != "weaknesses"}
-    summary_nums = _numbers(top_level) | _numbers(
-        [{k: v for k, v in w.items() if k != "examples"} for w in by_id.values()]
+    top_level = {k: v for k, v in facts.items() if k not in ("weaknesses", "breakdown")}
+    summary_nums = (
+        _numbers(top_level)
+        | _numbers(without_examples(facts["weaknesses"]))
+        | _numbers(without_examples(facts.get("breakdown", [])))
     )
     errors = [f"summary: {e}" for e in check_text(report["summary"], summary_nums, set())]
     covered = set()
@@ -139,25 +185,46 @@ def template_report(facts: dict) -> dict:
     claims = []
     for w in facts["weaknesses"]:
         ex = w["examples"][:1]
-        text = (
-            f"In {w['slice']}, you blundered {w['observed_blunders']} times in {w['moves']} "
-            f"moves ({w['observed_rate_pct']}%), while players at your rating would be "
-            f"expected to blunder about {w['expected_blunders']} times "
-            f"({w['expected_rate_pct']}%). That is {w['ratio']}x the expected rate, "
-            f"costing about {w['games_lost_equivalent']} games' worth of winning chances."
-        )
+        if w.get("compared_with") == "own level":
+            text = (
+                f"In {w['slice']}, you blundered {w['observed_blunders']} times in {w['moves']} "
+                f"moves ({w['observed_rate_pct']}%). Given how you play elsewhere, about "
+                f"{w['expected_blunders']} would be expected ({w['expected_rate_pct']}%), so "
+                f"this is {w['ratio']}x your usual rate: one of your relatively weakest areas, "
+                f"costing about {w['games_lost_equivalent']} games' worth of winning chances."
+            )
+        else:
+            text = (
+                f"In {w['slice']}, you blundered {w['observed_blunders']} times in {w['moves']} "
+                f"moves ({w['observed_rate_pct']}%), while players at your rating would be "
+                f"expected to blunder about {w['expected_blunders']} times "
+                f"({w['expected_rate_pct']}%). That is {w['ratio']}x the expected rate, "
+                f"costing about {w['games_lost_equivalent']} games' worth of winning chances."
+            )
         claims.append({"weakness": w["id"], "text": text, "evidence": [e["id"] for e in ex]})
-    if claims:
-        summary = (
-            f"Across {facts['games']} games and {facts['moves']} moves you blundered "
-            f"{facts['overall_observed_blunders']} times; peers would be expected to "
-            f"blunder about {facts['overall_expected_blunders']} times."
+    o, e = facts["overall_observed_blunders"], facts["overall_expected_blunders"]
+    ratio = facts.get("overall_ratio")
+    summary = f"Across {facts['games']} games and {facts['moves']} moves you blundered {o} times"
+    if ratio is not None and ratio < 0.9:
+        summary += (
+            f", fewer than the {e} that players at your rating would be expected to make "
+            f"({ratio}x the peer rate)."
+        )
+    elif ratio is not None and ratio > 1.1:
+        summary += (
+            f", more than the {e} that players at your rating would be expected to make "
+            f"({ratio}x the peer rate)."
         )
     else:
-        summary = (
-            f"Across {facts['games']} games and {facts['moves']} moves you blundered "
-            f"{facts['overall_observed_blunders']} times, about what peers at your rating "
-            f"would be expected to ({facts['overall_expected_blunders']}). No recurring "
-            f"weakness stood out with enough confidence."
+        summary += f", about the {e} expected for players at your rating."
+    if not any(w.get("compared_with", "peers") == "peers" for w in facts["weaknesses"]):
+        summary += (
+            " No area stood out as worse than your peers; the areas below are where you lose "
+            "most of your usual edge."
+            if claims
+            else " No recurring weakness stood out with enough confidence; the table below "
+            "shows where your blunders happen."
         )
+    if "peer_data_note" in facts:
+        summary += " " + facts["peer_data_note"]
     return {"summary": summary, "claims": claims}

@@ -17,6 +17,7 @@ OUT = Path(__file__).parent.parent / "tests" / "fixtures" / "coach" / "recorded.
 QUESTIONS = [
     ("in_scope", "What is my biggest weakness and can you show me an example?"),
     ("in_scope", "How often do I blunder overall compared to my peers?"),
+    ("in_scope", "Why do I blunder in the endgame?"),
     (
         "out_of_scope",
         "What is the best move in this position: "
@@ -52,7 +53,10 @@ def main():
         "latency_s": [],
     }
     chat_stats = []
-    with OUT.open("w") as out:
+    # Written to a temp file and swapped in only after a complete run, so an interrupted run
+    # (Groq quota, Ctrl-C) cannot replace the CI fixtures with a partial set.
+    tmp = OUT.with_suffix(".partial")
+    with tmp.open("w", encoding="utf-8") as out:
         for user in args.users:
             facts = coach.player_facts(user)
             print(user, "weaknesses:", len(facts["weaknesses"]))
@@ -125,6 +129,7 @@ def main():
         },
     }
     print(json.dumps(summary, indent=2))
+    tmp.replace(OUT)
 
 
 if __name__ == "__main__":

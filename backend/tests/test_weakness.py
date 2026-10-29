@@ -50,3 +50,21 @@ def test_shipped_model_predicts_sane_probabilities():
     row = dict.fromkeys(FEATURES, 1.0) | {"speed": "blitz", "piece": "N", "phase": "middlegame"}
     p = expected_blunder([row, row | {"clock_before": 3.0, "clock_frac": 0.01}])
     assert ((p > 0) & (p < 1)).all()
+
+
+def test_relative_weak_spot_for_player_better_than_peers():
+    from app.weakness import breakdown, weaknesses_with_relative
+
+    # Half the peer rate everywhere, peer rate under 10 s: worse than their own level there,
+    # never worse than peers.
+    mv = moves(n=3000, low_clock_rate=0.05)
+    mv["blunder"] = (
+        np.random.default_rng(1).random(len(mv)) < np.where(mv.clock_before < 10, 0.05, 0.02)
+    ).astype(int)
+    assert find_weaknesses(mv) == []
+    found = weaknesses_with_relative(mv)
+    assert found and found[0]["compared_with"] == "own level"
+    assert found[0]["slice"]["value"].startswith("under 10s")
+    rows = breakdown(mv)
+    assert {r["slice"]["family"] for r in rows} == {"phase", "clock", "speed"}
+    assert all(r["moves"] >= 50 for r in rows)

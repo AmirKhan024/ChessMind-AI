@@ -10,7 +10,8 @@
     <p>Analysing games with Stockfish: {{ job.done }} of {{ job.total }} done.</p>
     <progress value="{{ job.done }}" max="{{ job.total }}"></progress>
   {% elif job.status == "done" %}
-    <p>Analysis finished{% if job.total %}: {{ job.total }} new games analysed{% else %}: no new games to analyse{% endif %}.</p>
+    <p>Analysis finished{% if job.total %}: {{ job.total - job.skipped }} new games analysed{% else %}: no new games to analyse{% endif %}.</p>
+    {% if job.skipped %}<p class="muted">{{ job.skipped }} {{ "game" if job.skipped == 1 else "games" }} could not be analysed after a retry and {{ "was" if job.skipped == 1 else "were" }} left out.</p>{% endif %}
   {% elif job.status == "failed" %}
     <p class="error">Failed: {{ job.error }}</p>
   {% endif %}
@@ -29,6 +30,11 @@
 <form method="post" action="/ui/players/{{ job.username }}/report">
   <button type="submit">Write my coaching report</button>
   <p class="muted">Takes up to a minute. Every number in it is checked against the analysis.</p>
+</form>
+{% elif early_report %}
+<form method="post" action="/ui/players/{{ job.username }}/report">
+  <button type="submit">Report on the {{ job.done }} newest games now</button>
+  <p class="muted">The remaining games keep analysing; write a new report when they finish for a more confident result.</p>
 </form>
 {% endif %}
 {% endblock %}

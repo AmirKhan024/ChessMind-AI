@@ -1,23 +1,108 @@
+import logging
+import time
 import uuid
 
 import psycopg
 import redis
-from fastapi import FastAPI, Form, HTTPException, Response, UploadFile
+from fastapi import FastAPI, Form, HTTPException, Request, Response, UploadFile
+from fastapi.responses import JSONResponse
+from prometheus_client import CONTENT_TYPE_LATEST, REGISTRY, generate_latest
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app import coach, tasks, web
+from app import coach, logs, metrics, tasks, web
 from app.config import settings
-from app.db import engine, jobs, players, reports
+from app.db import engine, games, jobs, players, reports
 from app.games import USERNAME_RE
-from app.weakness import find_weaknesses, player_moves
+from app.weakness import breakdown, player_moves, weaknesses_with_relative
 
+logs.setup()
+log = logging.getLogger("app.http")
 app = FastAPI(title="ChessMind AI")
 app.include_router(web.router)
 app.add_exception_handler(StarletteHTTPException, web.http_error)
+REGISTRY.register(metrics.RedisCollector())
 MAX_UPLOAD_BYTES = 5_000_000
+# Per client IP per minute. Analysis costs minutes of CPU; reports and chat cost LLM quota.
+RATE_LIMITS = {"analyse": 6, "report": 6, "chat": 20, "delete": 6}
+
+
+def _rate_group(method: str, path: str) -> str | None:
+    if method == "DELETE":
+        return "delete"
+    if method != "POST":
+        return None
+    if path.endswith("/chat"):
+        return "chat"
+    if path.endswith("/report"):
+        return "report"
+    if path.endswith(("/analyse", "/upload")):
+        return "analyse"
+    return None
+
+
+def _over_limit(group: str, ip: str) -> bool:
+    # Fail open: Redis trouble should not lock everyone out (or slow every request).
+    if not metrics.redis_up():
+        return False
+    key = f"ratelimit:{group}:{ip}:{int(time.time() // 60)}"
+    try:
+        p = tasks.redis.pipeline()
+        p.incr(key)
+        p.expire(key, 60)
+        n, _ = p.execute()
+    except redis.RedisError as e:
+        metrics.redis_failed(e)
+        return False
+    return n > RATE_LIMITS[group]
+
+
+async def queue_unavailable(request: Request, exc: redis.RedisError):
+    """Redis down: enqueueing fails. Say so (503) instead of an unhandled 500."""
+    log.error("redis unavailable: %s", exc)
+    return await web.http_error(
+        request,
+        StarletteHTTPException(503, "The job queue is unavailable. Please try again shortly."),
+    )
+
+
+app.add_exception_handler(redis.RedisError, queue_unavailable)
+
+
+@app.middleware("http")
+async def observe(request: Request, call_next):
+    """Rate limit, then one JSON log line and one latency sample per request."""
+    t = time.perf_counter()
+    ip = request.client.host if request.client else "unknown"
+    group = settings.rate_limit and _rate_group(request.method, request.url.path)
+    if group and _over_limit(group, ip):
+        metrics.inc("rate_limited", group=group)
+        response = await web.http_error(
+            request, StarletteHTTPException(429, "Too many requests. Please wait a minute.")
+        )
+    else:
+        response = await call_next(request)
+    route = getattr(request.scope.get("route"), "path", "unmatched")
+    seconds = time.perf_counter() - t
+    if route != "/metrics":
+        metrics.observe("http_request_seconds", seconds, route=route, method=request.method)
+        log.info(
+            "request",
+            extra={
+                "method": request.method,
+                "route": route,
+                "status": response.status_code,
+                "ms": round(seconds * 1000, 1),
+            },
+        )
+    return response
+
+
+@app.get("/metrics", include_in_schema=False)
+def prometheus_metrics() -> Response:
+    return Response(generate_latest(REGISTRY), media_type=CONTENT_TYPE_LATEST)
 
 
 def _check_db() -> bool:
@@ -95,6 +180,7 @@ def job_status(job_id: str) -> dict:
         "status": row.status,
         "games_done": row.done,
         "games_total": row.total,
+        "games_skipped": row.skipped,
         "positions": row.positions,
         "cache_hit_rate": hit_rate,
         "queue_position": tasks.queue_position(job_id, row.status),
@@ -117,7 +203,8 @@ def weaknesses(username: str) -> dict:
             "observed_blunders": int(mv.blunder.sum()),
             "expected_blunders": round(float(mv.expected.sum()), 2),
         },
-        "weaknesses": find_weaknesses(mv),
+        "weaknesses": weaknesses_with_relative(mv),
+        "breakdown": breakdown(mv),
     }
 
 
@@ -127,21 +214,48 @@ def _username(username: str) -> str:
     return username.lower()
 
 
-@app.post("/players/{username}/report")
+@app.post("/players/{username}/report", status_code=202)
 def create_report(username: str) -> dict:
-    row = coach.generate_report(_username(username))
-    if row is None:
+    """Queues the report (building facts takes ~20 s for 300 games, plus LLM calls);
+    poll GET /reports/{id}."""
+    username = _username(username)
+    with engine.connect() as conn:
+        analysed = conn.scalar(
+            select(games.c.id)
+            .where(tasks.player_games(username), games.c.analysed_at.is_not(None))
+            .limit(1)
+        )
+    if analysed is None:
         raise HTTPException(404, "no analysed games for this player")
-    return {k: row[k] for k in ("id", "method", "attempts", "report", "facts")}
+    report_id = str(uuid.uuid4())
+    tasks.enqueue_report(username, report_id)
+    return {"report_id": report_id, "status": "queued"}
 
 
 @app.get("/reports/{report_id}")
-def get_report(report_id: str) -> dict:
+def get_report(report_id: str):
     with engine.connect() as conn:
         row = conn.execute(select(reports).where(reports.c.id == report_id)).one_or_none()
-    if row is None:
+    if row is not None:
+        return dict(row._mapping)
+    status = tasks.report_status(report_id)
+    if status is None:
         raise HTTPException(404, "report not found")
-    return dict(row._mapping)
+    if status == "failed":
+        raise HTTPException(500, "writing the report failed")
+    return JSONResponse({"status": status}, status_code=202)
+
+
+@app.delete("/players/{username}")
+def delete_player(username: str) -> dict:
+    """Delete everything stored about a player: games they played (with those games' moves),
+    jobs and reports. Cached engine evaluations of positions are not personal and stay."""
+    username = _username(username)
+    with engine.begin() as conn:
+        n_games = conn.execute(delete(games).where(tasks.player_games(username))).rowcount
+        n_reports = conn.execute(delete(reports).where(reports.c.username == username)).rowcount
+        conn.execute(delete(players).where(players.c.username == username))  # jobs cascade
+    return {"username": username, "games_deleted": n_games, "reports_deleted": n_reports}
 
 
 class Turn(BaseModel):
@@ -151,11 +265,28 @@ class Turn(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: list[Turn] = Field(min_length=1, max_length=12)
+    report_id: uuid.UUID | None = None
+
+
+def _report_facts(username: str, report_id: uuid.UUID | None) -> dict | None:
+    """Facts stored with the report the user is reading, so chat answers match that page
+    and skip re-parsing every game (~20 s for 300 games). Reports from before the
+    breakdown existed are rebuilt."""
+    if report_id is None:
+        return None
+    with engine.connect() as conn:
+        facts = conn.scalar(
+            select(reports.c.facts).where(
+                reports.c.id == str(report_id), reports.c.username == username
+            )
+        )
+    return facts if facts and "breakdown" in facts else None
 
 
 @app.post("/players/{username}/chat")
 def chat(username: str, body: ChatRequest) -> dict:
-    facts = coach.player_facts(_username(username))
+    username = _username(username)
+    facts = _report_facts(username, body.report_id) or coach.player_facts(username)
     if facts is None:
         raise HTTPException(404, "no analysed games for this player")
     out = coach.answer(facts, [t.model_dump() for t in body.messages])

@@ -17,6 +17,7 @@ dependencies = [
     "lightgbm",
     "pandas",
     "jinja2>=3.1.6",
+    "prometheus-client>=0.26.0",
 ]
 
 [dependency-groups]

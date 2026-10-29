@@ -19,6 +19,8 @@ router = APIRouter(include_in_schema=False)
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 PLAYED_COLOR = "#d9534f88"
 BEST_COLOR = "#2e9d4f88"
+# Enough games for the weakness test to have some power; the rest keep analysing meanwhile.
+EARLY_REPORT_GAMES = 50
 
 
 def _page(request: Request, name: str, status_code: int = 200, **ctx) -> HTMLResponse:
@@ -91,6 +93,7 @@ def ui_job(request: Request, job_id: str):
         job=row,
         queue_position=tasks.queue_position(job_id, row.status),
         running=row.status in ("fetching", "analysing"),
+        early_report=row.status == "analysing" and row.done >= EARLY_REPORT_GAMES,
     )
 
 
@@ -98,8 +101,8 @@ def ui_job(request: Request, job_id: str):
 def ui_create_report(request: Request, username: str):
     from app import main
 
-    row = main.create_report(username)
-    return RedirectResponse(f"/ui/reports/{row['id']}", status_code=303)
+    out = main.create_report(username)
+    return RedirectResponse(f"/ui/reports/{out['report_id']}", status_code=303)
 
 
 def _boards(evidence_ids: list[str]) -> dict[str, str]:
@@ -154,7 +157,16 @@ def ui_report(request: Request, report_id: str):
     with engine.connect() as conn:
         row = conn.execute(select(reports).where(reports.c.id == report_id)).one_or_none()
     if row is None:
-        raise HTTPException(404, "report not found")
+        status = tasks.report_status(report_id)
+        if status is None:
+            raise HTTPException(404, "report not found")
+        if status == "failed":
+            raise HTTPException(500, "Writing the report failed. Please try again.")
+        return _page(
+            request,
+            "report_pending.html",
+            queue_position=tasks.queue_position(report_id, "queued"),
+        )
     weaknesses = {w["id"]: w for w in row.facts["weaknesses"]}
     claims = []
     for c in row.report["claims"]:
@@ -174,11 +186,16 @@ def ui_report(request: Request, report_id: str):
         shown |= {p["id"] for p in c["drill"]["puzzles"]}
         for p in c["drill"]["puzzles"]:
             boards.setdefault("puzzle:" + p["id"], _puzzle_board(p))
+    rows = row.facts.get("breakdown", [])
+    for b in rows:
+        sl = parse_slice_label(b["slice"])
+        b["label"] = puzzles.display_label(sl["family"], sl["value"], b["slice"])
     return _page(
         request,
         "report.html",
         report=row,
         summary=row.report["summary"],
+        breakdown=rows,
         claims=claims,
         boards=boards,
         rating=rating,

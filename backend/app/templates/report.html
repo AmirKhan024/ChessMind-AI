@@ -3,6 +3,9 @@
 {% block body %}
 <h1>Report for {{ report.username }}</h1>
 <p>{{ summary }}</p>
+{% if report.facts.peer_data_note and report.facts.peer_data_note not in summary %}
+<p class="muted">{{ report.facts.peer_data_note }}</p>
+{% endif %}
 <p class="muted">
   {{ report.facts.games }} games, {{ report.facts.moves }} moves.
   {% if report.method == "llm" %}Written by {{ report.llm_model }}; every number and move was checked against the analysis.
@@ -12,10 +15,15 @@
 
 {% for c in claims %}
 <div class="card">
-  <h2 style="margin-top:0">{{ c.title }}</h2>
+  <h2 style="margin-top:0">{{ c.title }}{% if c.weakness.compared_with == "own level" %} <span class="muted tag">relative weak spot</span>{% endif %}</h2>
   <div class="stats muted">
+    {% if c.weakness.compared_with == "own level" %}
+    <span>Blunders: {{ c.weakness.observed_blunders }} (expected at your usual level {{ c.weakness.expected_blunders }})</span>
+    <span>{{ c.weakness.ratio }}x your usual rate</span>
+    {% else %}
     <span>Blunders: {{ c.weakness.observed_blunders }} (expected {{ c.weakness.expected_blunders }})</span>
     <span>{{ c.weakness.ratio }}x peers</span>
+    {% endif %}
     <span>Confidence {{ c.weakness.confidence_pct }}%</span>
     <span>Cost ≈ {{ c.weakness.games_lost_equivalent }} games</span>
   </div>
@@ -43,9 +51,27 @@
   </div>
   {% endif %}
 </div>
-{% else %}
-<div class="card">No recurring weakness stood out with enough confidence.</div>
 {% endfor %}
+
+{% if breakdown %}
+<h2>Where your blunders happen</h2>
+<div class="card table-wrap">
+  <table>
+    <thead><tr><th>Area</th><th>Moves</th><th>Blunders</th><th>Your rate</th><th>Peers' rate</th><th>vs peers</th></tr></thead>
+    <tbody>
+    {% for b in breakdown %}
+    <tr>
+      <td>{{ b.label }}</td><td>{{ b.moves }}</td><td>{{ b.blunders }}</td>
+      <td>{{ b.rate_pct }}%</td><td>{{ b.peer_rate_pct }}%</td>
+      <td class="{{ 'worse' if b.ratio_vs_peers and b.ratio_vs_peers > 1.1 else ('better' if b.ratio_vs_peers and b.ratio_vs_peers < 0.9 else '') }}">{{ b.ratio_vs_peers }}x</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted">Peers' rate: what the peer model expects from players at your rating in the same positions and clock situations.
+    Rows with fewer than 50 of your moves are left out. Single rows are descriptive; only the cards above passed the confidence test.</p>
+</div>
+{% endif %}
 
 {% if claims %}
 <p class="muted">Red arrow: your move. Green arrow: the engine's choice.
@@ -93,7 +119,7 @@
       const r = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: history.slice(-11) }),
+        body: JSON.stringify({ messages: history.slice(-11), report_id: "{{ report.id }}" }),
       });
       if (!r.ok) throw new Error("HTTP " + r.status);
       const out = await r.json();

@@ -18,14 +18,23 @@ jobs:
       - run: uv sync --frozen
       - run: uv run ruff check .
       - run: uv run ruff format --check .
-      - run: uv run pytest -q -rs
+      - name: Model quality gate (shipped model = registered, not worse, calibrated)
+        run: uv run pytest -q tests/test_model_gate.py
+      - name: Grounding eval gate (verifier replayed on recorded real LLM outputs)
+        run: uv run pytest -q tests/test_recorded_coach.py tests/test_grounding.py
+      - name: All tests
+        run: uv run pytest -q -rs
   compose:
     runs-on: ubuntu-latest
+    env:
+      ANALYSIS_WORKERS: 2  # 4-vCPU runner
     steps:
       - uses: actions/checkout@v4
       - run: docker compose up -d --build --wait
       - run: curl -fsS http://localhost:8000/health
       - name: End-to-end upload and Stockfish analysis
         run: sh backend/scripts/smoke.sh
+      - name: Metrics reach Prometheus format
+        run: curl -fsS http://localhost:8000/metrics | grep -E "chessmind_games_analysed_total [1-9]"
       - if: failure()
         run: docker compose logs

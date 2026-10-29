@@ -46,6 +46,7 @@ games = Table(
     Column("played_at", DateTime(timezone=True)),
     Column("engine", String(40)),
     Column("engine_nodes", Integer),
+    Column("quick_nodes", Integer),  # two-pass analysis: first-pass limit; null = one pass
     Column("analysed_at", DateTime(timezone=True)),
 )
 
@@ -86,7 +87,8 @@ jobs = Table(
     Column("player_id", ForeignKey("players.id", ondelete="CASCADE"), nullable=False),
     Column("status", String(10), nullable=False),  # fetching | analysing | done | failed
     Column("total", Integer, nullable=False, server_default="0"),
-    Column("done", Integer, nullable=False, server_default="0"),
+    Column("done", Integer, nullable=False, server_default="0"),  # analysed or skipped
+    Column("skipped", Integer, nullable=False, server_default="0"),  # failed twice
     Column("cache_hits", Integer, nullable=False, server_default="0"),
     Column("positions", Integer, nullable=False, server_default="0"),
     Column("error", Text),

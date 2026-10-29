@@ -99,3 +99,32 @@ def test_chat_regeneration_can_recover():
     )
     out = coach.answer(FACTS, [{"role": "user", "content": "how bad am I"}], chat)
     assert out["grounded"]
+
+
+def test_chat_answers_about_a_breakdown_area_that_is_not_a_weakness():
+    chat, calls = scripted(
+        tool_call("get_breakdown_examples", '{"slice": "game phase: endgame"}'),
+        "In endgames you blunder 10.0% of the time against 6.8% for peers; on move 48 you "
+        "played Rd1 where the engine preferred Re2.",
+    )
+    out = coach.answer(FACTS, [{"role": "user", "content": "why do I blunder in endgames"}], chat)
+    assert out["grounded"], out["errors"]
+    assert "breakdown" in calls[0][0]["content"]  # given up front
+
+
+def test_daily_token_limit_fails_fast_without_retrying(monkeypatch):
+    import httpx
+
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(429, json={"error": {"message": "Rate limit on tokens per day"}})
+
+    monkeypatch.setattr(llm.settings, "groq_api_key", "test")
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    try:
+        llm.chat([{"role": "user", "content": "hi"}], client=client)
+    except llm.LLMError as e:
+        assert "daily" in str(e)
+    assert len(calls) == 1  # no 20-60 s retries that cannot succeed

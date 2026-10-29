@@ -3,9 +3,9 @@
 > Maintained by Claude Code. Read `SOURCE_OF_TRUTH.md` first, then this file.
 > Update this file at the end of every session, before finishing.
 
-**Last updated:** 2026-10-28
-**Current chunk:** Chunk 5, Production and cloud (not started)
-**Overall state:** Chunks 0-4 done (CI green). Open: re-fit calibration after the mate-label fix (see Right now)
+**Last updated:** 2026-10-29
+**Current chunk:** Chunk 5, Production and cloud (in progress; deploy blocked on owner approval)
+**Overall state:** Chunks 0-4 done. Post-Chunk-4 fixes (speed, report content) done. Chunk 5 built and tested locally; AWS not provisioned. Open: re-fit calibration after the mate-label fix; measure coach-v4 prompt when the Groq daily quota resets
 
 ---
 
@@ -18,7 +18,7 @@
 | 2 | Weakness engine | done | chunk-2-done |
 | 3 | Coach | done | chunk-3-done |
 | 4 | Product surface | done | chunk-4-done |
-| 5 | Production and cloud | not started | |
+| 5 | Production and cloud | in progress (blocked: AWS approval) | |
 | 6 | Evidence and polish | not started | |
 
 States: not started / in progress / blocked / done
@@ -27,7 +27,11 @@ States: not started / in progress / blocked / done
 
 ## Right now
 
-- **Working on:** Chunk 4 done. UI (server-rendered, `app/web.py`): `/` username or PGN upload; `/ui/jobs/{id}` progress, queue position (other players' tasks ahead), 3 s refresh; `/ui/reports/{id}` report with SVG boards of cited positions (red = played, green = engine best), 5 drill puzzles per weakness, chat box (fetch to `POST /players/{u}/chat`, answers shown as plain text). HTML error pages for `/ui/*`, JSON errors kept for the API. Puzzles: `ml/puzzles.py` builds `backend/puzzles/puzzles.csv.gz` (31,934 of 6,157,341 Lichess puzzles, 1.8 MB, CC0) from the 2026-10-02 dump; slices map to puzzle themes/opening tags by a fixed table in `app/puzzles.py` (a practice suggestion, not a measured link). Report generation still runs inside the request (3-40 s).
+- **Working on:** Chunk 5. Done locally: Prometheus metrics (Redis-backed so all RQ worker processes add up; `app/metrics.py`), Grafana dashboard provisioned from `infra/monitoring/`, JSON logs with job_id (`app/logs.py`; workers run `python -m app.worker`), report queue (reports no longer run inside a request), per-IP rate limit, `DELETE /players/{u}`, CI model quality gate (`ml/gate.py`, committed 30k-move holdout) and a named grounding-gate step, load test (`scripts/load_test.py`), failure tests (`docs/failure-tests.md`: 4 real bugs found and fixed), runbook (`docs/runbook.md`), Terraform for one EC2 VM + Caddy HTTPS + SSM secret + budget alarm (`infra/terraform/`, passes `terraform validate`, **not applied**).
+- **Blocked on owner:** approve AWS spend and provide credentials, then `terraform apply` (see Blockers). Also decide whether Groq's 200k tokens/day is enough for a public demo.
+- **Post-Chunk-4 product fixes (owner feedback 2026-10-29: Carlsen's 300 games took ~15 min and the report said nothing useful):** (a) the template said "about what peers expect" for 430 vs 764 blunders; now it says fewer/more with the ratio. (b) Relative weak spots: the same Gamma-Poisson test with the expectation scaled by the player's own overall O/E, labelled "own level", fill places the peer test leaves empty. (c) A breakdown by phase / time left / time control is always shown and given to chat (chat could not answer "why do I blunder in the endgame"). (d) Peer-data note at 2700+. (e) Two-pass analysis (10k nodes, re-check moves dropping >= 5 pts at 100k): 99.1% of blunders kept, 2.5x faster. (f) 8 analysis workers by default, newest games first, early report after 50 games, fair interleaving between users. Result: 299 games from live Lichess in 260 s (was ~15 min).
+- **Coach prompt coach-v4** (readable keys in the prompt, trimmed report input) is untested live: Groq's daily token quota was used up by the evals. **TODO:** run `python -m ml.eval_coach beny627 goodplayscap husnu1995 drnykterstein --reports 2 --pause 45` inside the stack (command in results.md), then commit the re-recorded fixtures. Current `recorded.jsonl` = the Chunk 3 recordings re-scored with the field-name rule.
+- **Report rows do not record two-pass settings** (`games.quick_nodes` has them per game; the report page prints only the full node limit). Small follow-up.
 - **Bug found and fixed in Chunk 4 (affects Chunk 1-2 numbers):** checkmating moves were labelled blunders ("mate in 0" scored as a loss for the mover; the cache also lost the sign). All 67 mating moves in the dev DB were blunders. Fixed in `win_chances` and `analyse_game`; migration `d1e7a3c5b902` fixes stored moves. Training labels (Lichess %eval) were not affected. Our-engine label files were: white's mating moves = **2.3% (random), 3.2% (consistency), 2.5% (validity) of our blunders**. **TODO next session:** correct the `*_ours.jsonl` rows (mating move: blunder=0) and re-run `ml/consistency.py`, `ml/calibrate.py`, `ml/validity.py`; update calibration.json and the measured results below (the 1.16x label gap should drop to roughly 1.12x). Reports stored before the fix keep their old facts; generate a new one.
 - **Chunk 3 open items:** Open items for Chunk 3: re-record `tests/fixtures/coach/recorded.jsonl` after prompt changes (`python -m ml.eval_coach beny627 goodplayscap husnu1995 --reports 2`); report first-try pass rate is only 50%, try a clearer prompt or gpt-oss-20b comparison.
 - **Chunk 3 plan:** No LangGraph: the report is one structured call and chat is a short tool loop, plain code is simpler (decision logged). `llm.py` Groq client (timeout, bounded retries, backoff). `grounding.py` pure-code verifier: LLM must copy numbers verbatim from facts; every number and chess move in a claim must exist in the cited weakness/evidence facts; claims must cite evidence ids of their own weakness. Up to 2 regenerations with error feedback, then deterministic template. Reports table stores method, versions, verification log. Chat = tool loop over the same facts, answer verified against that turn's tool outputs. Eval: recorded fixtures (good + deliberately bad outputs) in CI; live script measures grounding pass rate.
@@ -42,7 +46,8 @@ States: not started / in progress / blocked / done
 
 ## Blockers and questions for the owner
 
-(empty)
+- **AWS deploy needs approval (money).** Plan: one `c7i-flex.large` (2 vCPU, 4 GB; free-tier eligible for AWS accounts created after 2025-07-15 per AWS docs, paid from credits) + Elastic IP + 30 GB gp3, budget alarm at $15/month. A bigger box analyses faster: c7i.2xlarge is about $0.357/h (~$260/month if always on; third-party price pages, check the console). Needs: AWS credentials on this machine, an alert email, and the Groq key stored in SSM (`docs/runbook.md`).
+- **Groq free tier: 200k tokens/day for gpt-oss-120b** (about 25-40 LLM reports a day; after that, template reports). Options: accept; add `openai/gpt-oss-20b` as a fallback model (grounding pass rate not measured); or Groq's paid Dev tier.
 
 ---
 
@@ -59,6 +64,7 @@ Record the result of every check of an [unverified] item from `SOURCE_OF_TRUTH.m
 | PGN headers contain ECO/opening and `[%clk]` comments | True for API export and bulk file (bulk: 99.7% of games have `%clk`; ECO/Opening headers present; Lichess `?!/?/??` NAGs present; no `GameId` header, id is end of `Site`). API Site format is `/game/<id>`. | 2026-10-28 | Real API response, 3 games |
 | Monthly dump file sizes | 2026-09: 29.2 GB, 89.6M games (~327 B/game). 2018-09: 6.8 GB. Server supports range requests; a truncated head decompresses fine. Download ~4.8 MB/s here. | 2026-10-28 | HEAD requests, `counts.txt`, 50 MB range download |
 | Selection bias in games that have evals | **10.4%** of games have `%eval` (not ~6%). Evaluated games are slower (rapid 32% vs 15%, bullet 21% vs 38%), ~59 Elo lower, fewer time forfeits (25% vs 34%). Same-labeller (our engine) blunder rate with vs without %eval: 7.92% vs 7.82%, no visible effect (198 vs 295 games). | 2026-10-28 | First 50 MB of 2026-09 (160k games), `ml/bias.py` |
+| Groq: daily token limit | **200,000 tokens per day** for gpt-oss-120b on the free tier (429 body: "tokens per day (TPD): Limit 200000"), separate from the 8k tokens/minute limit | 2026-10-29 | Real 429 response |
 | Groq: current model name and free-tier limits | Key valid. Models include `openai/gpt-oss-120b` (chosen), `openai/gpt-oss-20b`, `qwen/qwen3.8-27b`. Chat call works; rate-limit headers for gpt-oss-120b on this key: **1000 requests, 8000 tokens per minute** (so prompts must stay small, eval runs paced). | 2026-10-28 | `GET /openai/v1/models` |
 
 ---
@@ -78,7 +84,13 @@ Only measured numbers go here. These later feed `docs/results.md` and the README
 | Calibration on serving labels | **(pre mate-fix, re-measure)** After logit shift: O/E 0.98 (0.91-1.05) on 295 random non-%eval games (19.8k moves); raw model was 1.23 | `ml/calibrate.py` | 2026-10-28 |
 | Grounding pass rate (reports) | Strict rules (claims must quote their numbers): 3/6 grounded on first try, 5/6 after regeneration, 1/6 fell back to template; 0 ungrounded reports shown. Median latency 4.8 s, max 38 s; ~5.4k tokens/report. (An earlier, looser verifier passed 12/12, but the reports were vague and quoted no numbers, so it was tightened.) | 3 real players (60 games each), gpt-oss-120b, `ml/eval_coach.py` | 2026-10-28 |
 | Grounding pass rate (chat) | After giving overview+weaknesses up front: 4/4 in-scope answers grounded (spot check). Before: 2/6 (tool-loop HTTP 400s). Out-of-scope: 4/6 answered with a refusal; 2/6 blocked (echoed the user's own number) and replaced by the fixed refusal | same | 2026-10-28 |
-| Cost per report | | | |
+| Cost per report | $0 on the Groq free tier; 5-9k tokens per report (8.7k mean with regenerations, coach-v3) | gpt-oss-120b | 2026-10-29 |
+| Parallel Stockfish throughput | 1 engine 4.1 pos/s; 4: 19.0; 8: 26.2; 16: 31.1; 20: 32.4 (100k nodes) | `scripts/bench_parallel.py`, dev laptop | 2026-10-29 |
+| Two-pass analysis | 10k first pass, re-check >= 5 pts at 100k: **99.1% of 1,511 reference blunders kept, 2.48x faster** (5k: 98.4% / 2.77x; 20k: 99.7% / 1.97x) | 295 random games, `ml/two_pass.py` | 2026-10-29 |
+| Time to analyse 300 games | **260 s** for penguingm1 (299 games, live Lichess, 8 workers, cache hit 8%); first 50 games after 60 s. Before: ~15 min (drnykterstein, 4 workers, one pass) | dev laptop | 2026-10-29 |
+| Load test | 3 users x 25 games at once: half done after 48/60/70 s (before the fairness fix: 31/68/93 s); pages p50 46 ms, p95 107 ms | `scripts/load_test.py` | 2026-10-29 |
+| Coach live eval (coach-v3) | reports 8/8 grounded LLM after regeneration, 1/8 first try (53/61 errors were field names); chat in-scope 11/12, out-of-scope 8/8; p50 37 s | 4 players, `ml/eval_coach.py` | 2026-10-29 |
+| Model gate holdout | log-loss 0.2032, Brier 0.0580, ECE 0.0035 | 30k held-out moves, `ml/gate.py` | 2026-10-29 |
 
 ---
 
@@ -109,6 +121,14 @@ Log every deviation from a "Recommended" item, and any important choice.
 | 2026-10-28 | UI: server-rendered Jinja2 pages in the API, boards as SVG from python-chess | No JS build, no CDN, one container; the source of truth allows templates for a solo build | React + Vite + chessboard component |
 | 2026-10-28 | Puzzle drills from a shipped 1.8 MB subset (popular, well-tested puzzles; 25 per theme/opening x 200-point band), held in memory; no puzzles table | Clean `docker compose up` works offline; whole file is 307 MB / 6.2M rows | Load full dump into Postgres at startup |
 | 2026-10-28 | Weakness -> puzzle themes by a fixed table (phase -> phase theme, clock/speed -> short/long, piece -> piece endgame + typical tactic, opening -> opening tag) | The puzzle file has no clock or piece-moved data; a transparent table is honest about that | Learned mapping (no labels to learn from) |
+| 2026-10-29 | Relative weak spots (expected x player's own O/E) fill report places when the peer test finds fewer than 5 | Strong players (and most others) got an empty report; the peer test alone can only say "worse than peers" | Lower confidence threshold (more false findings) |
+| 2026-10-29 | Two-pass analysis: 10k nodes, then 100k for moves dropping >= 5 pts | Measured 99.1% blunder recall at 2.5x speed; more than 8 workers barely helps on the laptop | Lower node limit everywhere (worse labels) |
+| 2026-10-29 | Metrics kept in Redis hashes, exposed by the API's /metrics via a custom collector | RQ forks a process per job; in-process counters would be lost | Pushgateway (extra service), prometheus_client multiprocess mode (shared dir across containers) |
+| 2026-10-29 | Fair scheduling: each job keeps ANALYSIS_WORKERS games in RQ, the rest chained from a Redis list | Load test showed FIFO starvation between users | One RQ queue per user |
+| 2026-10-29 | Failed or abandoned game: retry once, then skip it (jobs.skipped) | Kill test: one lost game froze or failed the whole job | Fail the job (old behaviour) |
+| 2026-10-29 | Deploy target: one EC2 VM running compose + Caddy (sslip.io hostname), Terraform, Groq key in SSM, no SSH | Cheapest defensible option; same stack as local | ECS Fargate (more cost for steady CPU), Kubernetes (non-goal) |
+| 2026-10-29 | Model gate on a committed 30k-move holdout sample | Training data is not in the repo, so CI needs a fixed evaluation set | MLflow registry (still one model) |
+| 2026-10-29 | One report worker by default | Groq's tokens/minute, not CPU, limits reports; a second worker only competes for it | 2 workers |
 | 2026-10-28 | uv + `uv.lock` for pinned deps | Reproducible builds, fast CI | pip + requirements.txt |
 
 ---
@@ -123,4 +143,5 @@ Short entry per session: what changed, what is broken, what to do next.
 - 2026-10-28: Chunk 2 built and measured; results in `docs/results.md`. Caveats: validity sample is 98% bullet (players with many games in a 50 MB head); only 1 month of data. If time allows, a larger/other-month sample would firm this up. `GET /players/{u}/weaknesses` works on real analysed players. Labelling 3,000 games took ~2.5 h of laptop CPU.
 - 2026-10-28: Chunk 3 built. Coach report + chat with code-only grounding verifier, regeneration, template/refusal fallback, reports table with versions. Live eval on 3 real players. Found and fixed: vague reports passed a loose verifier; chat tool loop hit Groq 400 (`tool_choice none` but model called a tool). 43 tests incl. replay of real recorded outputs.
 - 2026-10-28: Chunk 4 first slice (short session). Server-rendered UI: submit/upload, progress with queue position, report with boards. Tested live: real report for beny627 (gpt-oss-120b, grounded, 3.6 s) renders with boards; upload, re-upload and error paths work. 47 tests pass. Next: chat UI, puzzle drill list, clean-compose browser check.
+- 2026-10-29: Owner tested drnykterstein: ~15 min and an empty, misleading report. Fixed (see Right now), then built Chunk 5 locally. Failure tests found 4 real bugs (a lost game froze or failed a job; 7-10 minute recovery; deploys cut games off; a Redis outage made every page ~8 s and submit a 500), all fixed and re-tested. Groq's daily quota (200k tokens) ran out during evals, so the coach-v4 prompt is still to be measured. A live eval run I stopped had overwritten recorded.jsonl; restored from git and re-scored, and eval_coach now writes atomically. Port 8000 was taken by another local project, hence `API_PORT`. 80 tests pass. Next: owner approves AWS -> `terraform apply`, check the public URL and dashboards with real traffic, write the cloud part of the failure report, tag chunk-5-done.
 - 2026-10-28: Chunk 4 finished: chat box, puzzle drills, HTML error pages, smoke test checks UI. Clean-stack check in a separate compose project (empty volumes, dev data kept): real Lichess user german11 (18 games) submit -> progress -> template report (no weakness) -> grounded chat; upload; error pages; smoke script passes. Headless Chrome: report page screenshot looks right; chat box click-through returns a grounded answer. Screenshot showed `Ra3#` labelled a blunder -> found the mate-label bug (see Right now). 61 tests pass. Not checked: phone-width layout (headless Chrome clamps the window width).

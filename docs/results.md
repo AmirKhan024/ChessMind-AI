@@ -40,3 +40,59 @@ Groq `openai/gpt-oss-120b`, 3 real Lichess players (60 games each, analysed by t
 
 - **Reports** (strict verifier: every number copied from the cited facts, every move from cited examples, each claim must quote its weakness's numbers): 3/6 grounded on the first try, 5/6 after up to 2 regenerations with error feedback, 1/6 replaced by the deterministic template. No ungrounded report was shown. Median latency 4.8 s (max 38 s), about 5.4k tokens per report. An earlier, looser verifier passed 12/12, but those reports quoted no numbers, so the rule was tightened.
 - **Chat**: in-scope questions 4/4 grounded after the overview and weakness list were put in the prompt (2/6 before, due to Groq tool-loop errors). Out-of-scope questions (best move in an unseen position, opening advice): 4/6 answered with a refusal to analyse, 2/6 were blocked by the verifier and replaced by a fixed refusal.
+
+# Results (after Chunk 4: speed, report quality; Chunk 5: production)
+
+Measured 2026-10-29 on the dev laptop (Docker Desktop, 24 logical CPUs, 8 GB for Docker).
+
+## Engine throughput and two-pass analysis
+- **Parallel Stockfish scaling** (`scripts/bench_parallel.py`, 100k nodes): total 4.1 positions/s
+  with 1 engine, 19.0 with 4, 26.2 with 8, 31.1 with 16, 32.4 with 20. Beyond 8 engines the
+  laptop adds little, so more workers alone cannot fix a 15-minute job (25k positions / 30 per s).
+- **Two-pass analysis** (`ml/two_pass.py`): every position at a low node limit, then both
+  positions around any move whose drop is >= a margin re-evaluated at 100k. Reference: the
+  same 295 random games fully labelled at 100k (1,511 blunders, 20,364 positions).
+
+| Pass-1 nodes | Margin (win-% pts) | Blunders kept | Speed vs 100k everywhere |
+|---|---|---|---|
+| 5k | 5 | 98.4% | 2.77x |
+| **10k** | **5** | **99.1%** | **2.48x** (chosen) |
+| 20k | 5 | 99.7% | 1.97x |
+| 10k | 10 | 97.4% | 3.56x |
+
+  Moves below the margin keep pass-1 evals and cannot be blunders (threshold 15 points), so
+  every blunder shown still rests on 100k-node evaluations at both ends.
+- **End to end, real Lichess user** (penguingm1, 299 games, live API, 8 workers, empty
+  cache): **260 s** to fully analysed (was about 15 minutes for drnykterstein, 300 games,
+  4 workers, one pass); the first 50 games, enough for an early report, after 60 s. Single
+  uploaded player, 50 games: 37 s.
+
+## Report content
+drnykterstein (300 games): before, the template said "about what peers would be expected"
+for 430 vs 764.3 expected blunders and showed nothing else. Now: "fewer than the 764.3 ...
+(0.56x the peer rate)", a relative weak spot (30-60 s left in the middlegame, 183 vs 153.0
+expected at his own level, 1.2x, confidence 99%), a breakdown by phase, time left and time
+control, and a note that few training players are rated as high (3,829 of 1.07M training
+moves are by players rated 2700+, 366 by 2900+).
+
+## Coach (live Groq, prompt coach-v3, 4 players x 2 reports + 20 chat questions)
+- Reports: 8/8 ended as grounded LLM text (0 template), but only 1/8 on the first try.
+  53 of 61 first-attempt errors were field names (e.g. "observed_blunders") copied into the
+  text, which a new verifier rule now blocks; median latency 37 s, 8.7k tokens per report.
+  Prompt coach-v4 shows the model readable keys to fix this; **not yet measured** (Groq
+  daily quota used up, see below).
+- Chat: in-scope 11/12 grounded (including "why do I blunder in the endgame" for all 4
+  players, now answered from the breakdown), out-of-scope 8/8 handled.
+- Re-scoring the Chunk 3 recordings with the field-name rule: 9 of 22 verdicts change
+  (outputs that read like "observed_blunders 183" are now blocked).
+- **Groq free tier also limits tokens per day: 200,000 for gpt-oss-120b** (seen in a 429
+  body). At ~5-9k tokens per report that is roughly 25-40 LLM reports a day; after that,
+  reports use the template. The client now falls back at once on a daily-limit 429.
+
+## Load and failure tests
+See `docs/failure-tests.md`. Load test (3 users x 25 games at once): pages p50 46 ms /
+p95 107 ms over 4,347 requests; users served in turn (half done after 48 / 60 / 70 s).
+
+## Model quality gate
+Shipped LightGBM on the committed held-out sample (30,000 moves from test-split players,
+`models/eval/holdout.csv.gz`): log-loss 0.2032, Brier 0.0580, ECE 0.0035 (`ml/gate.py`).

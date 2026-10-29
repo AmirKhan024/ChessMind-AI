@@ -1,0 +1,44 @@
+# Production override: only Caddy is public. API, DB, Prometheus and Grafana listen on
+# localhost (Grafana is reached through an SSM port-forward, see docs/runbook.md).
+# Usage: docker compose -f docker-compose.yml -f infra/compose.prod.yml up -d
+services:
+  api:
+    ports: !override ["127.0.0.1:8000:8000"]
+    environment:
+      # Trust Caddy's X-Forwarded-For so the per-IP rate limit sees real clients. Safe:
+      # the API port is bound to localhost, so only Caddy can reach it.
+      FORWARDED_ALLOW_IPS: "*"
+    restart: unless-stopped
+  worker-lichess:
+    restart: unless-stopped
+  worker-analysis:
+    restart: unless-stopped
+  worker-report:
+    restart: unless-stopped
+  db:
+    ports: !reset []
+    restart: unless-stopped
+  redis:
+    restart: unless-stopped
+  prometheus:
+    ports: !override ["127.0.0.1:9090:9090"]
+    restart: unless-stopped
+  grafana:
+    ports: !override ["127.0.0.1:3000:3000"]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2.10.0
+    ports: ["80:80", "443:443"]
+    environment:
+      PUBLIC_HOSTNAME: ${PUBLIC_HOSTNAME}
+    volumes:
+      - ./infra/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+    depends_on: [api]
+    restart: unless-stopped
+
+volumes:
+  caddydata:

@@ -80,3 +80,31 @@ def test_list_markers_are_not_numbers():
     from app.grounding import check_text
 
     assert check_text("1. You blundered 31 times\n2) Kg3 lost", {31.0}, {"Kg3"}) == []
+
+
+def test_template_says_fewer_or_more_than_peers():
+    from app.grounding import PEER_DATA_NOTE
+
+    better = {**FACTS, "weaknesses": [], "overall_expected_blunders": 241.0, "overall_ratio": 0.56}
+    s = template_report(better)["summary"]
+    assert "fewer than the 241.0" in s and "0.56x" in s
+    worse = {**FACTS, "overall_ratio": 1.3}
+    assert "more than the 118.2" in template_report(worse)["summary"]
+    note = {**FACTS, "overall_ratio": 0.56, "peer_data_note": PEER_DATA_NOTE}
+    assert validate_report(note, template_report(note)) == []
+
+
+def test_relative_weak_spot_template_wording():
+    rel = copy.deepcopy(FACTS)
+    rel["weaknesses"][0]["compared_with"] = "own level"
+    r = template_report(rel)
+    assert "your usual rate" in r["claims"][0]["text"]
+    assert validate_report(rel, r) == []
+
+
+def test_summary_may_quote_breakdown_but_not_field_names():
+    r = copy.deepcopy(GOOD)
+    r["summary"] = "In endgames you blunder 10.0% of the time against 6.8% for peers."
+    assert validate_report(FACTS, r) == []
+    r["summary"] = "Your overall_ratio is 1.14."
+    assert any("field name overall_ratio" in e for e in validate_report(FACTS, r))

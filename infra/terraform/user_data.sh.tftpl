@@ -1,0 +1,30 @@
+#!/bin/bash
+# First boot: install Docker, fetch the app, write .env from SSM, start the stack.
+set -euxo pipefail
+
+apt-get update
+apt-get install -y ca-certificates curl git unzip
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu noble stable" > /etc/apt/sources.list.d/docker.list
+apt-get update
+apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+snap install aws-cli --classic
+
+git clone --branch "${repo_ref}" "${repo_url}" /opt/chessmind
+cd /opt/chessmind
+
+GROQ_KEY=$(aws ssm get-parameter --region "${region}" --name /chessmind/groq_api_key \
+  --with-decryption --query Parameter.Value --output text)
+GRAFANA_PW=$(openssl rand -hex 16)
+umask 077
+cat > .env <<EOF
+GROQ_API_KEY=$GROQ_KEY
+PUBLIC_HOSTNAME=${hostname}
+ANALYSIS_WORKERS=${analysis_workers}
+REPORT_WORKERS=1
+GAMES_CAP=${games_cap}
+GRAFANA_ADMIN_PASSWORD=$GRAFANA_PW
+EOF
+
+docker compose -f docker-compose.yml -f infra/compose.prod.yml up -d --build --wait

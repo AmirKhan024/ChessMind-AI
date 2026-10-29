@@ -3,6 +3,10 @@
 Per slice: O = observed blunders, E = sum of peer-model blunder probabilities.
 The rate ratio r = O/E gets a Gamma(PRIOR, PRIOR) prior centred on 1 ("like your peers"),
 so thin slices are shrunk towards 1. Posterior: Gamma(PRIOR + O, PRIOR + E).
+
+With `scale` = the player's overall O/E, the same test asks "worse than your own usual
+level?" instead of "worse than peers?". A strong player has no slice worse than peers but
+still has slices where they lose more of their edge; those are relative weak spots.
 """
 
 import math
@@ -46,22 +50,30 @@ def prob_ratio_above_one(o: float, e: float) -> float:
     return min(1.0, total)
 
 
-def eligible_slices(moves: pd.DataFrame):
-    """Yield (family, value, slice moves, O, E, P(r>1)) for every slice big enough to test."""
+def eligible_slices(moves: pd.DataFrame, scale: float = 1.0):
+    """Yield (family, value, slice moves, O, E, P(r>1)) for every slice big enough to test.
+    E is the peer expectation times `scale`."""
     for family, key in SLICES.items():
         for value, d in moves.groupby(key(moves), dropna=True):
-            o, e = int(d.blunder.sum()), float(d.expected.sum())
+            o, e = int(d.blunder.sum()), float(d.expected.sum()) * scale
             if o >= MIN_BLUNDERS and len(d) <= MAX_SHARE * len(moves):
                 yield family, value, d, o, e, prob_ratio_above_one(o, e)
 
 
-def find_weaknesses(moves: pd.DataFrame, top: int = 5) -> list[dict]:
+def find_weaknesses(
+    moves: pd.DataFrame,
+    top: int = 5,
+    scale: float = 1.0,
+    skip: frozenset = frozenset(),
+    seen: set | None = None,
+) -> list[dict]:
     """moves: one row per move by the player, with feature columns, `opening_family`,
     `blunder` (0/1), `drop` (winning-chance loss), `expected` (peer probability),
-    `game_id`, `ply`."""
+    `game_id`, `ply`. `skip`: (family, value) slices already reported; `seen`: evidence ids
+    already used (both from an earlier call)."""
     found = []
-    for family, value, d, o, e, conf in eligible_slices(moves):
-        if conf >= MIN_CONFIDENCE:
+    for family, value, d, o, e, conf in eligible_slices(moves, scale):
+        if conf >= MIN_CONFIDENCE and (family, value) not in skip:
             ratio = (PRIOR + o) / (PRIOR + e)
             blunders = d[d.blunder == 1]
             # Win-% points lost to blunders beyond the peer expectation (shrunk).
@@ -70,6 +82,7 @@ def find_weaknesses(moves: pd.DataFrame, top: int = 5) -> list[dict]:
             found.append(
                 {
                     "slice": {"family": family, "value": value},
+                    "compared_with": "peers" if scale == 1.0 else "own level",
                     "moves": len(d),
                     "observed_blunders": o,
                     "expected_blunders": round(e, 2),
@@ -88,7 +101,7 @@ def find_weaknesses(moves: pd.DataFrame, top: int = 5) -> list[dict]:
     found.sort(key=lambda w: w["cost_win_pct"], reverse=True)
     # Overlapping slices (e.g. "under 10s" and "under 10s / endgame") often describe the
     # same blunders; keep the costlier one.
-    picked, seen = [], set()
+    picked, seen = [], set(seen or ())
     for w in found:
         ev = set(w["evidence"])
         if len(ev & seen) > len(ev) / 2:
@@ -98,6 +111,54 @@ def find_weaknesses(moves: pd.DataFrame, top: int = 5) -> list[dict]:
         if len(picked) == top:
             break
     return picked
+
+
+def weaknesses_with_relative(moves: pd.DataFrame, top: int = 5) -> list[dict]:
+    """Peer weaknesses first; remaining places go to relative weak spots (vs own level)."""
+    peer = find_weaknesses(moves, top)
+    o, e = moves.blunder.sum(), moves.expected.sum()
+    if len(peer) == top or not o or not e:
+        return peer
+    own = find_weaknesses(
+        moves,
+        top - len(peer),
+        scale=float(o / e),
+        skip=frozenset((w["slice"]["family"], w["slice"]["value"]) for w in peer),
+        seen={ev for w in peer for ev in w["evidence"]},
+    )
+    return peer + own
+
+
+BREAKDOWN = ("phase", "clock", "speed")
+MIN_BREAKDOWN_MOVES = 50
+BREAKDOWN_EXAMPLES = 2
+
+
+def breakdown(moves: pd.DataFrame) -> list[dict]:
+    """Descriptive blunder rates per phase / time left / time control, whether or not any
+    slice is a weakness, so the report and chat can always say where blunders happen."""
+    out = []
+    for family in BREAKDOWN:
+        for value, d in moves.groupby(SLICES[family](moves), dropna=True):
+            if len(d) < MIN_BREAKDOWN_MOVES:
+                continue
+            o, e = int(d.blunder.sum()), float(d.expected.sum())
+            blunders = d[d.blunder == 1]
+            out.append(
+                {
+                    "slice": {"family": family, "value": value},
+                    "moves": len(d),
+                    "observed_blunders": o,
+                    "observed_rate": o / len(d),
+                    "expected_rate": e / len(d),
+                    "ratio": o / e if e else None,
+                    "evidence": [
+                        f"{r.game_id}:{r.ply}"
+                        for r in blunders.nlargest(BREAKDOWN_EXAMPLES, "drop").itertuples()
+                    ],
+                }
+            )
+    return out
 
 
 def player_moves(username: str) -> pd.DataFrame:

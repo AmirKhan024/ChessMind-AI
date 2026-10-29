@@ -1,13 +1,94 @@
-{"games": 50, "moves": 1884, "overall_observed_blunders": 135, "overall_expected_blunders": 118.2,
- "weaknesses": [
-  {"id": "W1", "slice": "time left: under 10s", "moves": 210, "observed_blunders": 31,
-   "expected_blunders": 14.6, "ratio": 2.1, "confidence_pct": 99, "observed_rate_pct": 14.8,
-   "expected_rate_pct": 7.0, "games_lost_equivalent": 0.6,
-   "examples": [
-    {"id": "abcd1234:61", "move_number": 31, "played": "Qxb7", "best": "Nf3", "win_before": 62, "win_after": 18, "clock_s": 7},
-    {"id": "efgh5678:44", "move_number": 22, "played": "Rd1", "best": "Re1", "win_before": 55, "win_after": 20, "clock_s": 4}]},
-  {"id": "W2", "slice": "game phase: endgame", "moves": 400, "observed_blunders": 40,
-   "expected_blunders": 27.3, "ratio": 1.4, "confidence_pct": 98, "observed_rate_pct": 10.0,
-   "expected_rate_pct": 6.8, "games_lost_equivalent": 0.3,
-   "examples": [
-    {"id": "ijkl9012:80", "move_number": 40, "played": "Kg3", "best": "Kf2", "win_before": 70, "win_after": 35, "clock_s": 25}]}]}
+{
+  "games": 50,
+  "moves": 1884,
+  "overall_observed_blunders": 135,
+  "overall_expected_blunders": 118.2,
+  "weaknesses": [
+    {
+      "id": "W1",
+      "slice": "time left: under 10s",
+      "moves": 210,
+      "observed_blunders": 31,
+      "expected_blunders": 14.6,
+      "ratio": 2.1,
+      "confidence_pct": 99,
+      "observed_rate_pct": 14.8,
+      "expected_rate_pct": 7.0,
+      "games_lost_equivalent": 0.6,
+      "examples": [
+        {
+          "id": "abcd1234:61",
+          "move_number": 31,
+          "played": "Qxb7",
+          "best": "Nf3",
+          "win_before": 62,
+          "win_after": 18,
+          "clock_s": 7
+        },
+        {
+          "id": "efgh5678:44",
+          "move_number": 22,
+          "played": "Rd1",
+          "best": "Re1",
+          "win_before": 55,
+          "win_after": 20,
+          "clock_s": 4
+        }
+      ]
+    },
+    {
+      "id": "W2",
+      "slice": "game phase: endgame",
+      "moves": 400,
+      "observed_blunders": 40,
+      "expected_blunders": 27.3,
+      "ratio": 1.4,
+      "confidence_pct": 98,
+      "observed_rate_pct": 10.0,
+      "expected_rate_pct": 6.8,
+      "games_lost_equivalent": 0.3,
+      "examples": [
+        {
+          "id": "ijkl9012:80",
+          "move_number": 40,
+          "played": "Kg3",
+          "best": "Kf2",
+          "win_before": 70,
+          "win_after": 35,
+          "clock_s": 25
+        }
+      ]
+    }
+  ],
+  "overall_ratio": 1.14,
+  "breakdown": [
+    {
+      "slice": "game phase: endgame",
+      "moves": 412,
+      "blunders": 41,
+      "rate_pct": 10.0,
+      "peer_rate_pct": 6.8,
+      "ratio_vs_peers": 1.47,
+      "examples": [
+        {
+          "id": "mnop3456:95",
+          "move_number": 48,
+          "played": "Rd1",
+          "best": "Re2",
+          "win_before": 55,
+          "win_after": 21,
+          "clock_s": 7
+        }
+      ]
+    },
+    {
+      "slice": "game phase: opening",
+      "moves": 500,
+      "blunders": 4,
+      "rate_pct": 0.8,
+      "peer_rate_pct": 1.1,
+      "ratio_vs_peers": 0.73,
+      "examples": []
+    }
+  ]
+}

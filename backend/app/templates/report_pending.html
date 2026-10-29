@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block head %}<meta http-equiv="refresh" content="3">{% endblock %}
+{% block title %}Writing report · ChessMind AI{% endblock %}
+{% block body %}
+<h1>Writing your report…</h1>
+<div class="card">
+  <p>Finding your weaknesses and checking every number the coach writes against the analysis.
+    This usually takes 10 to 60 seconds.</p>
+  {% if queue_position %}<p class="muted">{{ queue_position }} {{ "report" if queue_position == 1 else "reports" }} from other players ahead of yours.</p>{% endif %}
+  <p class="muted">This page refreshes every 3 seconds.</p>
+</div>
+{% endblock %}

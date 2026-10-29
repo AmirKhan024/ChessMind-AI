@@ -1,0 +1,6 @@
+{$PUBLIC_HOSTNAME} {
+	encode gzip
+	# Metrics are for Prometheus on the box, not the internet.
+	respond /metrics 404
+	reverse_proxy api:8000
+}

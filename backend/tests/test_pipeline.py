@@ -49,6 +49,8 @@ def run(monkeypatch):
     # Like real Lichess, the stub ignores `max`; the task must enforce the cap.
     monkeypatch.setattr(tasks.lichess, "stream_games", lambda u, since, n: iter(served["games"]))
     monkeypatch.setattr(tasks.settings, "games_cap", 4)
+    monkeypatch.setattr(tasks.settings, "engine_quick_nodes", 0)  # single pass here
+    monkeypatch.setattr(tasks.settings, "analysis_workers", 2)  # 2 queued, rest chained
     monkeypatch.setattr(tasks, "enqueue", lambda q, f, _, gid, jid, **kw: f(gid, jid, sf=sf))
 
     def go():
@@ -133,3 +135,109 @@ def test_checkmating_move_is_not_a_blunder():
     with engine.connect() as c:
         last = c.execute(select(moves).where(moves.c.san == "Qh4#")).one()
     assert last.label is None and last.wc_after > 0.99
+
+
+class ScriptedEngine(FakeEngine):
+    """Quick pass sees nothing; the full limit sees white's 4th move (ply 7) losing 400 cp."""
+
+    def __init__(self, target_fen):
+        super().__init__()
+        self.target, self.limits = target_fen, []
+
+    def analyse(self, board, limit):
+        self.limits.append(limit.nodes)
+        cp = 0
+        if limit.nodes == tasks.settings.engine_nodes and board.fen() == self.target:
+            cp = -400
+        return {"score": chess.engine.PovScore(chess.engine.Cp(cp), chess.WHITE), "pv": []}
+
+
+def test_two_pass_rechecks_only_moves_with_a_quick_drop(monkeypatch):
+    for t in (moves, games, jobs, players, position_cache):
+        with engine.begin() as c:
+            c.execute(delete(t))
+    monkeypatch.setattr(tasks.settings, "engine_quick_nodes", 1000)
+    pgn = (
+        '[White "alice"]\n[Black "bob"]\n[Result "*"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bc4 Nf6 4. Ng5 *\n'
+    )
+    tasks.save_games("alice", [pgn], "upload")
+    job_id, _ = _new_job("alice", "analysing")
+    board = chess.Board()
+    for san in "e4 e5 Nf3 Nc6 Bc4 Nf6 Ng5".split():
+        board.push_san(san)
+    with engine.connect() as c:
+        gid = c.scalar(select(games.c.id))
+
+    # Quick evals are flat: nothing is re-checked, so the full-limit drop stays invisible.
+    sf = ScriptedEngine(board.fen())
+    tasks.analyse_game(gid, job_id, sf=sf)
+    assert set(sf.limits) == {1000}
+    with engine.connect() as c:
+        assert c.scalar(select(func.count()).where(moves.c.label.is_not(None))) == 0
+        assert c.scalar(select(games.c.quick_nodes)) == 1000
+
+    # A quick drop on ply 7 re-checks exactly its two positions at the full limit.
+    class QuickDrop(ScriptedEngine):
+        def analyse(self, b, limit):
+            out = super().analyse(b, limit)
+            if limit.nodes == 1000 and b.fen() == self.target:
+                out["score"] = chess.engine.PovScore(chess.engine.Cp(-200), chess.WHITE)
+            return out
+
+    with engine.begin() as c:
+        c.execute(delete(moves))
+        c.execute(delete(position_cache))
+        c.execute(games.update().values(analysed_at=None))
+    sf = QuickDrop(board.fen())
+    tasks.analyse_game(gid, job_id, sf=sf)
+    assert sf.limits.count(tasks.settings.engine_nodes) == 2
+    with engine.connect() as c:
+        label = c.scalar(select(moves.c.label).where(moves.c.ply == 7))
+    assert label == "blunder"
+
+
+def test_jobs_take_turns_in_the_analysis_queue(monkeypatch, fake_redis):
+    queued = []
+    monkeypatch.setattr(
+        tasks, "enqueue", lambda q, f, jid, gid, *a, **kw: queued.append((jid, gid))
+    )
+    monkeypatch.setattr(tasks.settings, "analysis_workers", 2)
+    for t in (moves, games, jobs, players):
+        with engine.begin() as c:
+            c.execute(delete(t))
+    for user in ("ann", "ben"):
+        pgns = [f'[White "{user}"]\n[Black "x{i}"]\n[Result "*"]\n\n1. e4 *\n' for i in range(5)]
+        tasks.save_games(user, pgns, "upload")
+    a, _ = _new_job("ann", "analysing")
+    b, _ = _new_job("ben", "analysing")
+    tasks.enqueue_analysis(a, "ann")
+    tasks.enqueue_analysis(b, "ben")
+    assert [j for j, _ in queued] == [a, a, b, b]  # only a window per job, not all 5
+    tasks._enqueue_next(a)  # one of ann's games finished
+    assert queued[-1][0] == a and len(fake_redis.data[tasks._pending_key(a)]) == 2
+
+
+def test_failed_game_is_retried_once_then_skipped_without_failing_the_job(monkeypatch):
+    from types import SimpleNamespace
+
+    queued = []
+    monkeypatch.setattr(tasks, "enqueue", lambda *a, **kw: queued.append(kw))
+    for t in (moves, games, jobs, players):
+        with engine.begin() as c:
+            c.execute(delete(t))
+    job_id, _ = _new_job("ann", "analysing")
+    with engine.begin() as c:
+        c.execute(jobs.update().values(total=2, done=1))
+
+    def fail(attempts):
+        rq_job = SimpleNamespace(
+            origin="analysis", args=("g1", job_id), meta={"job_id": job_id, "attempts": attempts}
+        )
+        tasks._on_failure(rq_job, None, RuntimeError, RuntimeError("worker died"), None)
+
+    fail(1)
+    assert queued == [{"timeout": 1800, "attempts": 2}]
+    fail(2)
+    with engine.connect() as c:
+        job = c.execute(select(jobs)).one()
+    assert (job.status, job.done, job.skipped) == ("done", 2, 1)

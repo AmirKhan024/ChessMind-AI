@@ -8,6 +8,7 @@ from collections.abc import Iterator
 
 import httpx
 
+from app import metrics
 from app.config import settings
 
 log = logging.getLogger(__name__)
@@ -36,6 +37,8 @@ def stream_games(
     url = f"{settings.lichess_url}/api/games/user/{username}"
     for attempt in range(MAX_429_RETRIES + 1):
         with (client or httpx).stream("GET", url, params=params, headers=headers, timeout=30) as r:
+            if r.status_code == 429:
+                metrics.inc("lichess_429")
             if r.status_code == 429 and attempt < MAX_429_RETRIES:
                 log.warning("lichess 429, pausing queue for %ss", RATE_LIMIT_WAIT)
                 time.sleep(RATE_LIMIT_WAIT)
